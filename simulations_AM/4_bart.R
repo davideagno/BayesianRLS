@@ -7,8 +7,8 @@ library(brms)
 library(parallel)
 library(extraDistr)
 
-Rcpp::sourceCpp("AM_sim.cpp")
-source("functions_AM_sim.R")
+Rcpp::sourceCpp("RLS_functions.cpp")
+source("RLS_functions.R")
 
 # Preliminary settings
 p <- 15

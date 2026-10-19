@@ -95,7 +95,7 @@ for (s in 1:nSim) {
   in_ci_rls_norm[,s] <- in_ci_test
   width_ci_rls_norm[,s] <- width_ci_test
 
-  # UQ quantile
+  # Quantile
   sq_err <- rep(NA, n_test)
   in_ci_test_q <- rep(0, n_test)
   width_test_q <- rep(NA, n_test)

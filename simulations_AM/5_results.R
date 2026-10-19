@@ -5,9 +5,6 @@ library(mgcv)
 library(coda)
 library(brms)
 
-Rcpp::sourceCpp("AM_sim.cpp")
-source("functions_AM_sim.R")
-
 p <- 15
 n_obs <- 30*p
 df_true <- 5

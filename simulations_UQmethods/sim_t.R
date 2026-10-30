@@ -63,7 +63,7 @@ for (s in 1:nSim) {
   in_ci_beta_Sn <- rep(0, p)
   width_ci_beta_Sn <- rep(NA, p)
   for (j in 1:p) {
-    ci_j <- qnorm(c(0.025, 0.975), mean = bb$beta[j], sd = sigma_true*sqrt(cc$Sigma[j,j]))
+    ci_j <- qnorm(c(0.025, 0.975), mean = bb$beta[j], sd = sqrt(var_true)*sqrt(cc$Sigma[j,j]))
     width_ci_beta_Sn[j] <- abs(ci_j[2] - ci_j[1])
     if (ci_j[1] <= beta_true[j] & beta_true[j] <= ci_j[2]) in_ci_beta_Sn[j] <- 1
   }
@@ -75,7 +75,7 @@ for (s in 1:nSim) {
   in_ci_beta_Vn <- rep(0, p)
   width_ci_beta_Vn <- rep(NA, p)
   for (j in 1:p) {
-    ci_j <- qnorm(c(0.025, 0.975), mean = bb$beta[j], sd = sigma_true*sqrt(cc$V_n[j,j]))
+    ci_j <- qnorm(c(0.025, 0.975), mean = bb$beta[j], sd = sqrt(var_true)*sqrt(cc$V_n[j,j]))
     width_ci_beta_Vn[j] <- abs(ci_j[2] - ci_j[1])
     if (ci_j[1] <= beta_true[j] & beta_true[j] <= ci_j[2]) in_ci_beta_Vn[j] <- 1
   }
@@ -86,7 +86,7 @@ for (s in 1:nSim) {
   # 1 := PS standard with \sigma_n^2 = \sigma^2
   t_1 <- system.time(pp <- ps_lm_par_t(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7))
   time_1[s] <- t_1[3]
-  mse_1[s] <- mean((beta_true - colMeans(pp))^2)
+  mse_1[s] <- mean((bb$beta - colMeans(pp))^2)
   cov_1 <- cov(pp) / var_true
   fr_Sn_1[s] <- sqrt(sum((c(cc$Sigma)[lowtri] - c(cov_1)[lowtri])^2))
   fr_Vn_1[s] <- sqrt(sum((c(cc$V_n)[lowtri] - c(cov_1)[lowtri])^2))
@@ -104,7 +104,7 @@ for (s in 1:nSim) {
   # 2 := PS fixed with \sigma_n^2 = \sigma^2
   t_2 <- system.time(aa <- ps_lm_fixed_par_t(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7))
   time_2[s] <- t_2[3]
-  mse_2[s] <- mean((beta_true - colMeans(aa))^2)
+  mse_2[s] <- mean((bb$beta - colMeans(aa))^2)
   cov_2 <- cov(aa) / var_true
   fr_Sn_2[s] <- sqrt(sum((c(cc$Sigma)[lowtri] - c(cov_2)[lowtri])^2))
   fr_Vn_2[s] <- sqrt(sum((c(cc$V_n)[lowtri] - c(cov_2)[lowtri])^2))
@@ -122,7 +122,7 @@ for (s in 1:nSim) {
   # A := PS standard with \sigma_n^2 = \sigma^2 / a_n
   t_A <- system.time(vv <- ps_lm_par_t_alt(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7))
   time_A[s] <- t_A[3]
-  mse_A[s] <- mean((beta_true - colMeans(vv))^2)
+  mse_A[s] <- mean((bb$beta - colMeans(vv))^2)
   cov_A <- cov(vv) / var_true
   fr_Sn_A[s] <- sqrt(sum((c(cc$Sigma)[lowtri] - c(cov_A)[lowtri])^2))
   fr_Vn_A[s] <- sqrt(sum((c(cc$V_n)[lowtri] - c(cov_A)[lowtri])^2))
@@ -140,7 +140,7 @@ for (s in 1:nSim) {
   # B := PS fixed with \sigma_n^2 = \sigma^2 / a_n
   t_B <- system.time(ll <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7))
   time_B[s] <- t_B[3]
-  mse_B[s] <- mean((beta_true - colMeans(ll))^2)
+  mse_B[s] <- mean((bb$beta - colMeans(ll))^2)
   cov_B <- cov(ll) / var_true
   fr_Sn_B[s] <- sqrt(sum((c(cc$Sigma)[lowtri] - c(cov_B)[lowtri])^2))
   fr_Vn_B[s] <- sqrt(sum((c(cc$V_n)[lowtri] - c(cov_B)[lowtri])^2))

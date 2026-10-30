@@ -57,7 +57,8 @@ for (s in 1:nSim) {
   df_test <- data.frame(y = dat_test$y, dat_test$X)
   X_splines_test <- cbind(1, do.call(cbind,
                                      lapply(smooths, function(sm) mgcv::PredictMat(sm, df_test))))
-  mean_true <- dat_test$mu + rowSums(dat_test$F_true)
+  # Truth centered as the training data (see true_f_test)
+  mean_true <- dat$mu + rowSums(true_f_test(dat, X_test))
   
   # Optimization - GAUSSIAN
   df_norm <- 10000

@@ -52,7 +52,8 @@ for (s in 1:nSim) {
   df_test <- data.frame(y = dat_test$y, dat_test$X)
   X_splines_test <- cbind(1, do.call(cbind,
                                      lapply(smooths, function(sm) mgcv::PredictMat(sm, df_test))))
-  mean_true <- dat_test$mu + rowSums(dat_test$F_true)
+  # Truth centered as the training data (see true_f_test)
+  mean_true <- dat$mu + rowSums(true_f_test(dat, X_test))
   
   
   # Student-t AM
@@ -77,7 +78,7 @@ for (s in 1:nSim) {
   
   
   # RLS approx
-  t_opt <- system.time(opt <- nlminb(start = c(log(2), log(1), rep(log(1), p)), objective = npll_loo,
+  t_opt <- system.time(opt <- nlminb(start = c(log(2), log(1), rep(0.5, p)), objective = npll_loo_alt,
                                      y = dat$y, X = X_splines, beta_0 = b_0, Omega = Omega))
   df_opt <- exp(opt$par[1])
   sigma_opt <- exp(opt$par[2])

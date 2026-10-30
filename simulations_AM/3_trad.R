@@ -54,7 +54,8 @@ for (s in 1:nSim) {
   df_test <- data.frame(y = dat_test$y, dat_test$X)
   X_splines_test <- cbind(1, do.call(cbind,
                                      lapply(smooths, function(sm) mgcv::PredictMat(sm, df_test))))
-  mean_true <- dat_test$mu + rowSums(dat_test$F_true)
+  # Truth centered as the training data (see true_f_test)
+  mean_true <- dat$mu + rowSums(true_f_test(dat, X_test))
   
   d <- vapply(Z, ncol, integer(1))
   D <- d[1]; stopifnot(all(d == D))
@@ -138,7 +139,7 @@ for (s in 1:nSim) {
   time_trad[s] <- t_trad[3]
   
   
-  name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_trad_1.RData")
+  name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_trad.RData")
   save(mse_trad, in_ci_trad, width_ci_trad, ess_trad, time_trad, 
        mse_trad_q, in_ci_trad_q, width_trad_q, file = name_out)
 }

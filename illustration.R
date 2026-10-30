@@ -5,6 +5,7 @@ library(mgcv)
 library(coda)
 library(brms)
 library(parallel)
+library(extraDistr)
 
 Rcpp::sourceCpp("RLS_functions.cpp")
 source("RLS_functions.R")
@@ -48,7 +49,7 @@ var_opt <- sigma_opt^2 * df_opt / (df_opt - 2)
 B_ps <- 10000
 beta_ps <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt, df_opt, nthreads = 7)
 
-Gaussian P_n
+# Gaussian P_n
 opt_n <- nlminb(start = 1, objective = function(x) npll_loo_lm_t_alt(c(log(1e5), x), y, X, b_0, V_0))
 (sigma_opt_n <- exp(opt_n$par))
 beta_ps_n <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7)

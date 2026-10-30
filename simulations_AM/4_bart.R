@@ -41,7 +41,8 @@ for (s in 1:nSim) {
   # Test set
   dat_test <- dat_test_sim
   df_test <- data.frame(y = dat_test$y, dat_test$X)
-  mean_true <- dat_test$mu + rowSums(dat_test$F_true)
+  # Truth centered as the training data (see true_f_test)
+  mean_true <- dat$mu + rowSums(true_f_test(dat, dat_test$X))
   
   # BART
   t_bart <- system.time(fit_bart <- BART::gbart(x.train = dat$X, y.train = dat$y,

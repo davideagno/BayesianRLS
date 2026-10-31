@@ -2541,3 +2541,325 @@ double npll_loo_lm_t_alt(const arma::vec& log_par,
   if (!std::isfinite(out)) return BIG;
   return -out;
 }
+
+
+
+
+
+
+
+
+
+
+
+namespace {
+
+const double BIG_APPL      = 1e100;  // valore per parametri non ammissibili
+  const double EPS_APPL      = 1e-10;  // come EPS_ORIG / eps degli originali
+  const double VAR_UNPEN     = 1e10;   // = 1 / EPS_APPL, come P_0(0,0) = 1e10
+  const double DF_GAUSS_APPL = 1e8;
+  
+  inline double dt_log_appl(const double z, const double df) {
+    if (df >= DF_GAUSS_APPL)
+      return -0.5 * z * z - 0.5 * std::log(2.0 * M_PI);
+    return R::lgammafn(0.5 * (df + 1.0))
+      - R::lgammafn(0.5 * df)
+      - 0.5 * std::log(df * M_PI)
+      - 0.5 * (df + 1.0) * std::log1p(z * z / df);
+  }
+  
+  std::vector<mat> as_blocks_appl(const Rcpp::List& Omega) {
+    std::vector<mat> Om;
+    Om.reserve(Omega.size());
+    for (R_xlen_t j = 0; j < Omega.size(); ++j) {
+      mat Oj = Rcpp::as<mat>(Omega[j]);
+      if (Oj.n_rows != Oj.n_cols)
+        Rcpp::stop("Omega[[%d]] non e' quadrata", (int) j + 1);
+      Om.push_back(std::move(Oj));
+    }
+    return Om;
+  }
+  
+  // Controlli sul design, comuni alle due funzioni.
+  // Una colonna non penalizzata (oltre all'intercetta) con meno di 2 valori non
+  // nulli non e' stimabile in leave-one-out (h_i = 1) e, se tutta nulla, non e'
+  // identificata: in quel caso la sua "posteriore" sarebbe solo la varianza 1e10.
+  void check_design_appl(const mat& X, const std::vector<mat>& Om, const int n_par) {
+    const uword p = X.n_cols;
+    if (n_par < 1 || (uword) n_par > p)
+      Rcpp::stop("n_par deve essere compreso tra 1 e ncol(X)");
+    uword tot = (uword) n_par;
+    for (const mat& O : Om) tot += O.n_rows;
+    if (tot != p)
+      Rcpp::stop("n_par + somma delle dimensioni dei blocchi di Omega (%d) deve "
+                   "essere uguale a ncol(X) (%d)", (int) tot, (int) p);
+    for (int k = 1; k < n_par; ++k) {
+      const uword nz = accu(X.col(k) != 0.0);
+      if (nz < 2)
+        Rcpp::stop("la colonna %d di X (non penalizzata) ha %d valori non nulli: "
+                     "servono almeno 2. Rimuovila o accorpa la categoria.",
+                     k + 1, (int) nz);
+    }
+  }
+  
+  // S = P_0^{-1} = blockdiag( eps * I_{n_par}, lambda_1*Omega_1 + eps*I, ... )
+  mat build_S_appl(const vec& lambda, const std::vector<mat>& Om,
+                   const uword p, const uword n_par) {
+    mat S(p, p, fill::zeros);
+    for (uword k = 0; k < n_par; ++k) S(k, k) = EPS_APPL;
+    uword off = n_par;
+    for (uword j = 0; j < Om.size(); ++j) {
+      const uword k = Om[j].n_rows;
+      mat B = lambda(j) * Om[j];
+      B.diag() += EPS_APPL;
+      S.submat(off, off, off + k - 1, off + k - 1) = B;
+      off += k;
+    }
+    return S;
+  }
+  
+  // P_0 = blockdiag( 1e10 * I_{n_par}, (lambda_1*Omega_1 + eps*I)^{-1}, ... )
+  mat build_P0_appl(const vec& lambda, const std::vector<mat>& Om,
+                    const uword p, const uword n_par) {
+    mat P0(p, p, fill::zeros);
+    for (uword k = 0; k < n_par; ++k) P0(k, k) = VAR_UNPEN;
+    uword off = n_par;
+    for (uword j = 0; j < Om.size(); ++j) {
+      const uword k = Om[j].n_rows;
+      mat A = lambda(j) * Om[j];
+      A.diag() += EPS_APPL;
+      mat Ainv;
+      if (!inv_sympd(Ainv, A)) Ainv = inv(A);
+      P0.submat(off, off, off + k - 1, off + k - 1) = Ainv;
+      off += k;
+    }
+    return P0;
+  }
+  
+  // Una Cholesky di A = X'X + S, poi beta, leverage e residui LOO (come loo_core).
+  bool loo_core_appl(const vec& y, const mat& X, const vec& beta_0,
+                     const vec& lambda, const std::vector<mat>& Om, const uword n_par,
+                     vec& beta, vec& h, vec& r_loo) {
+    const uword p = X.n_cols;
+    const mat   S = build_S_appl(lambda, Om, p, n_par);
+    
+    mat A = X.t() * X + S;
+    A = 0.5 * (A + A.t());
+    
+    mat R;
+    if (!chol(R, A)) return false;
+    
+    const vec b = X.t() * y + S * beta_0;
+    beta = solve(trimatu(R), solve(trimatl(R.t()), b), solve_opts::fast);
+    
+    const mat W = solve(trimatl(R.t()), X.t(), solve_opts::fast);
+    h = trans(sum(square(W), 0));
+    if (!h.is_finite() || h.max() >= 1.0 - 1e-12) return false;
+    
+    r_loo = (y - X * beta) / (1.0 - h);
+    return true;
+  }
+  
+} // anonymous namespace
+
+
+// ---------------------------------------------------------------------------
+//  npll_loo_alt_appl
+//    log_par : c(log(df), log(sigma), log(lambda_1), ..., log(lambda_q)),
+//              q = length(Omega) = numero di blocchi PENALIZZATI
+//    n_par   : numero di colonne iniziali di X non penalizzate (intercetta
+//              inclusa). Default 1 = npll_loo_alt().
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+double npll_loo_alt_appl(const arma::vec& log_par,
+                         const arma::vec& y,
+                         const arma::mat& X,
+                         const arma::vec& beta_0,
+                         const Rcpp::List& Omega,
+                         int n_par = 1) {
+  
+  const uword n = y.n_elem;
+  const uword p = X.n_cols;
+  const uword q = (uword) Omega.size();
+  
+  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
+  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
+  if (log_par.n_elem != q + 2)
+    Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
+  
+  const std::vector<mat> Om = as_blocks_appl(Omega);
+  check_design_appl(X, Om, n_par);
+  
+  if (!log_par.is_finite()) return BIG_APPL;
+  
+  const double df     = std::exp(log_par(0));
+  const double sigma  = std::exp(log_par(1));
+  const vec    lambda = (q > 0) ? vec(exp(log_par.subvec(2, log_par.n_elem - 1)))
+    : vec();
+  
+  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)) return BIG_APPL;
+  if (q > 0 && (!lambda.is_finite() || lambda.min() <= 0.0))  return BIG_APPL;
+  
+  vec beta, h, r;
+  if (!loo_core_appl(y, X, beta_0, lambda, Om, (uword) n_par, beta, h, r))
+    return BIG_APPL;
+  
+  // -sum_i [ log dt(r_i/sigma_i ; df) - log sigma_i ],  sigma_i = sigma/sqrt(1-h_i)
+  const double log_sigma = std::log(sigma);
+  double out = 0.0;
+  for (uword i = 0; i < n; ++i) {
+    const double sigma_i     = sigma / std::sqrt(1.0 - h(i));
+    const double log_sigma_i = log_sigma - 0.5 * std::log1p(-h(i));
+    out += dt_log_appl(r(i) / sigma_i, df) - log_sigma_i;
+  }
+  
+  if (!std::isfinite(out)) return BIG_APPL;
+  return -out;
+}
+
+
+// ---------------------------------------------------------------------------
+//  rls_lambda_appl
+//    Stesso output di rls_lambda() (+ n_par). lambda ha un elemento per ogni
+//    blocco di Omega (solo smooth). Default n_par = 1 = rls_lambda().
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+Rcpp::List rls_lambda_appl(const arma::vec& y,
+                           const arma::mat& X,
+                           const arma::vec& beta_0,
+                           const arma::vec& lambda,
+                           const Rcpp::List& Omega,
+                           int n_par = 1) {
+  
+  const uword n = y.n_elem;
+  const uword p = X.n_cols;
+  
+  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
+  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
+  if (lambda.n_elem != (uword) Omega.size())
+    Rcpp::stop("length(lambda) deve essere uguale a length(Omega)");
+  
+  const std::vector<mat> Om = as_blocks_appl(Omega);
+  check_design_appl(X, Om, n_par);
+  
+  const mat P_0 = build_P0_appl(lambda, Om, p, (uword) n_par);
+  
+  // Ricorsione RLS, eq. (3)-(4) del paper
+  vec beta = beta_0;
+  mat P    = P_0;
+  vec Px(p);
+  for (uword i = 0; i < n; ++i) {
+    const vec x_i = X.row(i).t();
+    Px = P * x_i;
+    const double a = 1.0 / (1.0 + dot(x_i, Px));
+    beta += Px * (a * (y(i) - dot(x_i, beta)));
+    P    -= a * (Px * Px.t());
+  }
+  
+  return Rcpp::List::create(
+    Rcpp::Named("beta")   = beta,
+    Rcpp::Named("P")      = P,
+    Rcpp::Named("lambda") = lambda,
+    Rcpp::Named("Omega")  = Omega,
+    Rcpp::Named("n_par")  = n_par,
+    Rcpp::Named("y")      = y,
+    Rcpp::Named("X")      = X,
+    Rcpp::Named("beta_0") = beta_0,
+    Rcpp::Named("P_0")    = P_0
+  );
+}
+
+
+
+// ---------------------------------------------------------------------------
+//  npll_loo_alt_appl_skt
+//    Come npll_loo_alt_appl(), ma P_n e' una skew-t di Azzalini (Azzalini &
+//    Capitanio, 2003) con posizione x_i' beta_{-i}, scala
+//    sigma_i = sigma / sqrt(1 - h_i), forma alpha e df gradi di liberta':
+//
+//      log f(z) = log 2 + log t_df(z)
+//               + log T_{df+1}( alpha * z * sqrt((df + 1) / (df + z^2)) ),
+//      z_i = r_i / sigma_i,     contributo i-esimo = log f(z_i) - log sigma_i.
+//
+//    - alpha = 0 restituisce esattamente npll_loo_alt_appl();
+//    - df >= DF_GAUSS_APPL usa il limite skew normal
+//        log 2 + log phi(z) + log Phi(alpha * z).
+//    Nota: per alpha != 0, x_i' beta_{-i} e' la posizione e non la media di P_n.
+//
+//    log_par : c(log(df), log(sigma), alpha, log(lambda_1), ..., log(lambda_q)),
+//              q = length(Omega) = numero di blocchi PENALIZZATI;
+//              alpha non e' trasformato (vive su tutta la retta reale)
+//    n_par   : numero di colonne iniziali di X non penalizzate (intercetta
+//              inclusa). Default 1.
+//
+//    Usa as_blocks_appl(), check_design_appl(), loo_core_appl(), BIG_APPL e
+//    DF_GAUSS_APPL dal namespace anonimo: va messa dopo npll_loo_alt_appl().
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+double npll_loo_alt_appl_skt(const arma::vec& log_par,
+                             const arma::vec& y,
+                             const arma::mat& X,
+                             const arma::vec& beta_0,
+                             const Rcpp::List& Omega,
+                             int n_par = 1) {
+  
+  const uword n = y.n_elem;
+  const uword p = X.n_cols;
+  const uword q = (uword) Omega.size();
+  
+  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
+  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
+  if (log_par.n_elem != q + 3)
+    Rcpp::stop("length(log_par) deve essere length(Omega) + 3");
+  
+  const std::vector<mat> Om = as_blocks_appl(Omega);
+  check_design_appl(X, Om, n_par);
+  
+  if (!log_par.is_finite()) return BIG_APPL;
+  
+  const double df     = std::exp(log_par(0));
+  const double sigma  = std::exp(log_par(1));
+  const double alpha  = log_par(2);
+  const vec    lambda = (q > 0) ? vec(exp(log_par.subvec(3, log_par.n_elem - 1)))
+    : vec();
+  
+  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)) return BIG_APPL;
+  if (q > 0 && (!lambda.is_finite() || lambda.min() <= 0.0))  return BIG_APPL;
+  
+  vec beta, h, r;
+  if (!loo_core_appl(y, X, beta_0, lambda, Om, (uword) n_par, beta, h, r))
+    return BIG_APPL;
+  
+  // Costanti che dipendono solo da df: calcolate una volta.
+  const bool   gauss = (df >= DF_GAUSS_APPL);
+  const double c_t   = gauss ? 0.0
+  : R::lgammafn(0.5 * (df + 1.0)) - R::lgammafn(0.5 * df)
+    - 0.5 * std::log(df * M_PI);
+  const double df1       = df + 1.0;
+  const double log_sigma = std::log(sigma);
+  
+  // -sum_i [ log f(r_i/sigma_i ; df, alpha) - log sigma_i ],
+  //   sigma_i     = sigma / sqrt(1 - h_i)
+  //   log sigma_i = log sigma - 0.5 * log(1 - h_i)
+  double out = 0.0;
+  for (uword i = 0; i < n; ++i) {
+    const double log_sigma_i = log_sigma - 0.5 * std::log1p(-h(i));
+    const double z           = r(i) * std::sqrt(1.0 - h(i)) / sigma;   // r_i / sigma_i
+    
+    double lf;
+    if (gauss) {
+      // limite skew normal; pnorm in scala log resta accurata in coda sinistra
+      lf = M_LN2 + R::dnorm(z, 0.0, 1.0, 1)
+      + R::pnorm(alpha * z, 0.0, 1.0, 1, 1);
+    } else {
+      const double z2 = z * z;
+      const double w  = alpha * z * std::sqrt(df1 / (df + z2));
+      lf = M_LN2 + c_t - 0.5 * df1 * std::log1p(z2 / df)
+        + R::pt(w, df1, 1, 1);                 // log T_{df+1}(w), coda inferiore
+    }
+    out += lf - log_sigma_i;
+  }
+  
+  if (!std::isfinite(out)) return BIG_APPL;
+  return -out;
+}

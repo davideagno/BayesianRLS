@@ -84,7 +84,7 @@ for (s in 1:nSim) {
     for (j in 1:P) {
       vector[D] beta_j = b[((j - 1) * D + 1):(j * D)];
       target += -0.5 * (lambda[j] / square(sigma)) * quad_form_sym(Omega[j], beta_j)
-                + 0.5 * D * log(lambda[j]) - D * log(sigma);
+                + 0.5 * rk[j] * log(lambda[j]) - rk[j] * log(sigma);
     }",
             block = "model")
   

@@ -1,28 +1,13 @@
 
 rm(list = ls())
 
-# ---------------------------------------------------------------------------
-# NHANES August 2021 - August 2023  ("_L" files)
-# Build an analysis frame for an additive model with Student-t errors:
-#   log(triglycerides) ~ s(age) + s(BMI) + s(waist) + s(HDL) + s(glucose)
-#                        + s(systolic BP) + s(income-poverty ratio)
-#
-# Requires: haven, dplyr  (optionally mgcv for the model at the end)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# NHANES August 2021 - August 2023  ("_L" files)
-# Build an analysis frame for an additive model with Student-t errors:
-#   log(triglycerides) ~ s(age) + s(BMI) + s(waist) + s(HDL) + s(glucose)
-#                        + s(systolic BP) + s(income-poverty ratio)
-#
-# Requires: haven, dplyr  (optionally mgcv for the model at the end)
-# ---------------------------------------------------------------------------
-
 library(haven)
 library(dplyr)
 
 base <- "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/"
+
+# Fallback if the above 404s:
+# base <- "https://wwwn.cdc.gov/Nchs/Nhanes/2021-2023/"   # then use .XPT uppercase
 
 get_xpt <- function(name, ext = ".xpt") {
   url <- paste0(base, name, ext)
@@ -38,6 +23,9 @@ hdl    <- get_xpt("HDL_L")      # HDL cholesterol
 glu    <- get_xpt("GLU_L")      # fasting plasma glucose
 bpxo   <- get_xpt("BPXO_L")     # oscillometric blood pressure
 fastqx <- get_xpt("FASTQX_L")   # fasting questionnaire (fasting time)
+
+# Optional alternative response: fasting insulin
+# ins <- get_xpt("INS_L")       # LBXIN
 
 # --- 1b. ALWAYS inspect names before selecting -----------------------------
 # Variable names are NOT stable across cycles. In August 2021-August 2023 the
@@ -67,15 +55,17 @@ dat <- dat %>%
          SBP = ifelse(is.nan(SBP), NA, SBP))
 
 
-# --- 3. Filters, withdat# --- 3. Filters, with a running count -------------------------------------
 report <- function(d, label) { cat(sprintf("%-42s n = %5d\n", label, nrow(d))); d }
 
 analysis <- dat %>%
   report("all participants") %>%
   filter(RIDSTATR == 2)                    %>% report("MEC examined") %>%
   filter(!is.na(LBXTLG))                    %>% report("has triglycerides (fasting sub)") %>%
-  filter(RIDAGEYR >= 40)   %>% report("adults 40+") %>%
+  filter(RIDAGEYR <= 40)   %>% report("adults 40+") %>%
+  
   filter(PHAFSTHR >= 12, PHAFSTHR <= 24)    %>% report("fasted 12-24 h") %>%
+  
+  filter(RIDEXMON == 2)                    %>% report("+ exam May 1 - Oct 30") %>%
   filter(RIAGENDR == 1)                    %>% report("+ male only") %>%
   filter(DMDBORN4 == 1)                  %>% report("+ US-born") %>%
   # -------------------------------------------------------------------------
@@ -94,6 +84,6 @@ cat("\nfinal n =", nrow(analysis), " p = 7  ->  n/p =",
 
 df <- as.data.frame(analysis)
 df$ethn <- as.factor(df$ethn)
-contrasts(df$ethn) <- contr.treatment(levels(df$ethn), base = 3) 
+contrasts(df$ethn) <- contr.treatment(levels(df$ethn), base = 3)
 
 save(df, file = "appl_data.RData")

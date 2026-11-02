@@ -49,7 +49,7 @@ for (s in 1:nSim) {
   
   # BART
   t_bart <- system.time(fit_bart <- BART::gbart(x.train = dat$X, y.train = dat$y,
-                                                x.test = dat_test$X, ndpost = 1000, nskip = 2000, mc.cores = ncores))
+                                                x.test = dat_test$X, ndpost = 5000, nskip = 50000, mc.cores = ncores))
   xx <- predict(fit_bart, dat_test$X)
   
   # Prediction

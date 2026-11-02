@@ -1,5 +1,5 @@
 # Section 5.2: simulation with additive models (Table 2 and Table S3).
-# Run scripts 1-5 of this folder in order, from this folder, with n_obs = 30*p and
+# Run scripts 1-6 of this folder in order, from this folder, with n_obs = 30*p and
 # n_obs = 100*p. Step 1: simulate the training and test datasets.
 
 rm(list = ls())
@@ -16,7 +16,7 @@ p <- 15
 n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
 n_obs <- n_mult*p
 dir.create("output", showWarnings = FALSE)
-nSim <- 100
+nSim <- 30
 n_test <- 1e4
 df_val <- 5
 sigma_val <- 1

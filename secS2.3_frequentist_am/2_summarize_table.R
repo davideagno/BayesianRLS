@@ -1,5 +1,5 @@
 # Summaries for Table S2; also uses the RLS-t results of
-# ../sec5.2_additive_models/2_rls.R.
+# ../sec5.2_additive_models/2_fit_rls_student_t.R.
 
 rm(list = ls())
 

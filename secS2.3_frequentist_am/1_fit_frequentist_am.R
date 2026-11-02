@@ -1,5 +1,5 @@
 # Section S2.3 of the supplement: comparison with frequentist additive models
-# (Table S2). Uses the datasets simulated by ../sec5.2_additive_models/1_sim_data.R.
+# (Table S2). Uses the datasets simulated by ../sec5.2_additive_models/1_simulate_data.R.
 
 rm(list = ls())
 
@@ -17,7 +17,7 @@ p <- 15
 n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
 n_obs <- n_mult*p
 dir.create("output", showWarnings = FALSE)
-nSim <- 100
+nSim <- 30
 n_test <- 1e4
 sigma_true <- 1
 df_true <- 5
@@ -30,6 +30,9 @@ mse_amt <- mse_amn <- mse_apx <- rep(NA, nSim)
 in_ci_amt <- in_ci_amn <- in_ci_apx <- matrix(nrow = n_test, ncol = nSim)
 width_amt <- width_amn <- width_apx <- rep(NA, nSim)
 time_amt <- time_amn <- time_apx <- rep(NA, nSim)
+# Point estimates and standard errors of E(Y | x) at each test point, with the true
+# values, for any further analysis (all intervals are Gaussian)
+est_amt <- se_amt <- est_amn <- se_amn <- est_apx <- se_apx <- truth_f <- matrix(NA, nrow = n_test, ncol = nSim)
 
 for (s in 1:nSim) {
   
@@ -79,6 +82,9 @@ for (s in 1:nSim) {
   width_amt[s] <- mean(width_ci_amt_test)
   mse_amt[s] <- mean((mean_true - pred_amt_test)^2)
   time_amt[s] <- t_amt[3]
+  est_amt[,s] <- pred_amt_test
+  se_amt[,s] <- test_amt$se.fit
+  truth_f[,s] <- mean_true
   
   
   # RLS approx
@@ -105,6 +111,8 @@ for (s in 1:nSim) {
   width_apx[s] <- mean(width_ci_rls_test)
   mse_apx[s] <- mean((mean_true - mu_rls_test)^2)
   time_apx[s] <- t_opt[3] + t_est[3]
+  est_apx[,s] <- mu_rls_test
+  se_apx[,s] <- sqrt(var_est * rowSums((X_splines_test %*% bb$P) * X_splines_test))
   
   
   # Gaussian AM
@@ -124,11 +132,14 @@ for (s in 1:nSim) {
   width_amn[s] <- mean(width_ci_amn_test)
   mse_amn[s] <- mean((mean_true - pred_amn_test)^2)
   time_amn[s] <- t_amn[3]
+  est_amn[,s] <- pred_amn_test
+  se_amn[,s] <- test_amn$se.fit
   
 }
 
 name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData"))
 save(mse_amt, mse_amn, mse_apx, in_ci_amt, in_ci_amn, in_ci_apx, 
-     time_amt, time_amn, time_apx, width_amt, width_amn, width_apx, file = name_out)
+     time_amt, time_amn, time_apx, width_amt, width_amn, width_apx,
+     est_amt, se_amt, est_amn, se_amn, est_apx, se_apx, truth_f, file = name_out)
 
 

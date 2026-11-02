@@ -16,7 +16,7 @@ p <- 15
 n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
 n_obs <- n_mult*p
 dir.create("output", showWarnings = FALSE)
-nSim <- 100
+nSim <- 30
 n_test <- 1e4
 
 sigma_true <- 1
@@ -32,6 +32,11 @@ df_est <- sigma_est <- rep(NA, nSim)
 mse_rls_q <- rep(NA, nSim)
 in_ci_rls_q <- width_rls_q <- matrix(nrow = n_test, ncol = nSim)
 lev <- 0.90
+# Posterior summaries (mean, sd, HPD, 2.5% and 97.5% quantiles) at each test point,
+# with the corresponding true values, for any further analysis
+summary_f <- summary_q <- array(NA, dim = c(n_test, 6, nSim))
+truth_f <- truth_q <- matrix(NA, nrow = n_test, ncol = nSim)
+lambda_est <- matrix(NA, nrow = p, ncol = nSim)
 
 ncores <- 8
 
@@ -72,6 +77,8 @@ for (s in 1:nSim) {
   sigma_opt <- exp(opt$par[2])
   lambda_opt <- exp(opt$par[-c(1:2)])
   
+  lambda_est[,s] <- lambda_opt
+  
   # Point Estimate
   t_est <- system.time(bb <- rls_lambda(dat$y, X_splines, b_0, lambda_opt, Omega))
   
@@ -85,38 +92,24 @@ for (s in 1:nSim) {
   mu_rls_test <- c(X_splines_test %*% bb$beta)
   mse_rls[s] <- mean((mean_true - mu_rls_test)^2)
   
-  # UQ
-  in_ci_test <- rep(0, n_test)
-  width_ci_test <- rep(NA, n_test)
-  for (i in 1:n_test) {
-    rp_i <- c(beta_ps %*% X_splines_test[i,])
-    ci_i <- robustBLME::hpd(rp_i)
-    width_ci_test[i] <- abs(ci_i[2] - ci_i[1])
-    if (ci_i[1] <= mean_true[i] & mean_true[i] <= ci_i[2]) in_ci_test[i] <- 1
-  }
-  in_ci_rls[,s] <- in_ci_test
-  width_ci_rls[,s] <- width_ci_test
-
-  # Quantile
-  sq_err <- rep(NA, n_test)
-  in_ci_test_q <- rep(0, n_test)
-  width_test_q <- rep(NA, n_test)
-  for (i in 1:n_test) {
-    pq_i <- c(beta_ps %*% X_splines_test[i,]) + sigma_opt*qt(lev, df_opt)
-    ci_i <- robustBLME::hpd(pq_i)
-    width_test_q[i] <- abs(ci_i[2] - ci_i[1])
-    pq_true <- mean_true[i] + sigma_true*qt(lev, df_true)
-    if (ci_i[1] <= pq_true & pq_true <= ci_i[2]) in_ci_test_q[i] <- 1
-    sq_err[i] <- (mean(pq_i) - pq_true)^2
-  }
-  mse_rls_q[s] <- mean(sq_err)
-  in_ci_rls_q[,s] <- in_ci_test_q
-  width_rls_q[,s] <- width_test_q
+  # UQ for f(x) and Q_0.90(x): posterior summaries at each test point
+  f_draws <- X_splines_test %*% t(beta_ps)   # n_test x number of draws
+  q_draws <- f_draws + rep(sigma_opt*qt(lev, df_opt), each = n_test)
+  q_true <- mean_true + sigma_true*qt(lev, df_true)
+  sum_f <- summarize_draws(f_draws)
+  sum_q <- summarize_draws(q_draws)
+  summary_f[,,s] <- sum_f
+  summary_q[,,s] <- sum_q
+  truth_f[,s] <- mean_true
+  truth_q[,s] <- q_true
+  in_ci_rls[,s] <- 1*(sum_f[,"hpd_lo"] <= mean_true & mean_true <= sum_f[,"hpd_hi"])
+  width_ci_rls[,s] <- sum_f[,"hpd_hi"] - sum_f[,"hpd_lo"]
+  mse_rls_q[s] <- mean((sum_q[,"mean"] - q_true)^2)
+  in_ci_rls_q[,s] <- 1*(sum_q[,"hpd_lo"] <= q_true & q_true <= sum_q[,"hpd_hi"])
+  width_rls_q[,s] <- sum_q[,"hpd_hi"] - sum_q[,"hpd_lo"]
   
   # ESS
-  mu_ps_matrix <- X_splines_test %*% t(beta_ps)
-  mu_ps_matrix_t <- t(mu_ps_matrix)
-  ess_rls[,s] <- coda::effectiveSize(mu_ps_matrix_t)
+  ess_rls[,s] <- coda::effectiveSize(t(f_draws))
   
   # Time
   time_opt[s] <- t_opt[3]
@@ -132,7 +125,8 @@ for (s in 1:nSim) {
   name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
   save(mse_rls, ess_rls, in_ci_rls, width_ci_rls,
        time_rls, time_opt, time_est, time_ps, df_est, sigma_est, 
-       mse_rls_q, in_ci_rls_q, width_rls_q, file = name_out)
+       mse_rls_q, in_ci_rls_q, width_rls_q,
+       summary_f, summary_q, truth_f, truth_q, lambda_est, file = name_out)
 }
 
 print("COMPLETED")

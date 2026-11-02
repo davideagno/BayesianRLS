@@ -2863,3 +2863,202 @@ double npll_loo_alt_appl_skt(const arma::vec& log_par,
   if (!std::isfinite(out)) return BIG_APPL;
   return -out;
 }
+
+// ===========================================================================
+//  Skew-t P_n for the linear model: new functions only.
+//
+//  Paste at the END of AM_sim.cpp. Uses what is already there:
+//  RNG, StudentT, BIG, DF_GAUSS, dt_log_2(), SN_SQRT_2_OVER_PI, SN_LOG2,
+//  dsn_log_std(), loo_core_lm().
+//
+//  Same structure as ps_lm_fixed_par_skew_alt / npll_loo_lm_skew_alt:
+//  predictive scale sigma_i = sigma * sqrt(1 + x_i' V_{i-1} x_i) in the
+//  sampler, sigma_i = sigma / sqrt(1 - h_i) in the loo-pll, and P_n centred
+//  so that its mean is x_i' beta_{i-1}.
+//
+//  Skew-t (Azzalini), standard ST(0, 1, alpha, nu):
+//      S = (delta |Z0| + sqrt(1 - delta^2) Z1) * sqrt(nu / (2 G)),
+//      G ~ Gamma(nu / 2, 1),   delta = alpha / sqrt(1 + alpha^2).
+//  Mean (nu > 1):
+//      mu = delta * sqrt(nu / pi) * Gamma((nu - 1) / 2) / Gamma(nu / 2).
+//  Log-density:
+//      log 2 + log t_nu(z) + log T_{nu+1}( alpha z sqrt((nu + 1) / (nu + z^2)) ).
+//  nu -> Inf gives back the skew normal; alpha = 0 gives back the t.
+//  sigma is the SCALE omega, as in the other samplers.
+// ===========================================================================
+
+static inline double st_delta(const double alpha) {
+  return std::isinf(alpha) ? (alpha > 0.0 ? 1.0 : -1.0)
+    : alpha / std::hypot(1.0, alpha);
+}
+
+// E[S], S ~ ST(0, 1, alpha, nu), nu > 1
+static inline double st_mean(const double delta, const double df) {
+  if (df >= DF_GAUSS) return delta * SN_SQRT_2_OVER_PI;
+  return delta * std::sqrt(df / M_PI) *
+    std::exp(R::lgammafn(0.5 * (df - 1.0)) - R::lgammafn(0.5 * df));
+}
+
+// log-density of the standard skew-t ST(0, 1, alpha, nu) at z
+static inline double dst_log_std(const double z, const double alpha,
+                                 const double df) {
+  if (df >= DF_GAUSS) return dsn_log_std(z, alpha);
+  const double w = alpha * z * std::sqrt((df + 1.0) / (df + z * z));
+  return SN_LOG2 + dt_log_2(z, df) + R::pt(w, df + 1.0, 1, 1);
+}
+
+
+// ---------------------------------------------------------------------------
+//  Predictive resampling with P_n = centred skew-t, fixed X_future.
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+NumericMatrix ps_lm_fixed_par_st_alt(NumericVector beta_n_, NumericMatrix V_n_,
+                                     NumericMatrix X_future_, int B, double sigma,
+                                     double alpha, double df, double seed = 1.0,
+                                     int nthreads = 0, bool centered = true) {
+  
+  const arma::uword N = X_future_.nrow();
+  const arma::uword p = X_future_.ncol();
+  
+  if ((arma::uword) beta_n_.size() != p)
+    stop("length(beta_n) must equal ncol(X_future).");
+  if ((arma::uword) V_n_.nrow() != p || (arma::uword) V_n_.ncol() != p)
+    stop("V_n must be p x p with p = ncol(X_future).");
+  if (B < 1) stop("B must be >= 1.");
+  if (!(sigma >= 0.0)) stop("sigma must be >= 0.");
+  if (std::isnan(alpha)) stop("alpha must not be NaN.");
+  if (!(df > 0.0)) stop("df must be > 0.");
+  if (centered && !(df > 1.0)) stop("centered = TRUE needs df > 1 (the mean must exist).");
+  
+  const arma::mat X(X_future_.begin(), N, p, false);   // read-only view
+  const arma::vec beta_n = as<arma::vec>(beta_n_);
+  arma::mat       V_N    = as<arma::mat>(V_n_);
+  
+  // --- skew-t constants: depend on (alpha, df) only, built once (serial:
+  //     st_mean calls R::lgammafn, which must not run in worker threads) ----
+  const double st_d     = st_delta(alpha);
+  const double st_r     = std::isinf(alpha) ? 0.0 : 1.0 / std::hypot(1.0, alpha);
+  const double st_shift = centered ? st_mean(st_d, df) : 0.0;
+  const StudentT tsamp(df);                            // shared, read-only
+  
+  // --- gain sequence and predictive scales: serial, as in *_t_alt ---------
+  arma::mat gT(p, N);              // column i: sigma_i * a_i * V_{i-1} x_i
+  arma::vec sigma_i(N);            // predictive scale of y_i
+  arma::vec Vx(p);
+  
+  for (arma::uword i = 0; i < N; ++i) {
+    const arma::rowvec x_i = X.row(i);
+    Vx = V_N * x_i.t();
+    const double q_i = 1.0 + arma::dot(x_i, Vx);       // = 1 / a_i
+    if (!(q_i > 0.0))
+      stop("1 + x_i' V x_i <= 0 at row %d: V_n is not positive definite.",
+           (int) i + 1);
+    const double a_i = 1.0 / q_i;
+    
+    sigma_i[i] = sigma * std::sqrt(q_i);
+    gT.col(i)  = (sigma_i[i] * a_i) * Vx;
+    
+    V_N -= a_i * (Vx * Vx.t());
+    const arma::mat V_t = V_N.t();
+    V_N = 0.5 * (V_N + V_t);
+  }
+  
+  arma::mat beta_out(p, B);
+  const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
+  
+  auto worker = [&](int lo, int hi) {
+    arma::vec beta(p);
+    for (int b = lo; b < hi; ++b) {
+      RNG rng(base + 0x9E3779B97F4A7C15ULL * (uint64_t)(b + 1));
+      beta = beta_n;
+      for (arma::uword i = 0; i < N; ++i) {
+        const double z0 = rng.norm();
+        const double z1 = rng.norm();
+        const double sn = st_d * std::fabs(z0) + st_r * z1;
+        const double v  = tsamp.gaussian ? 1.0
+        : std::sqrt(tsamp.half_df / tsamp.gamma1(rng));
+        beta += (sn * v - st_shift) * gT.col(i);        // e_i = sigma_i * s_i
+      }
+      beta_out.col(b) = beta;
+    }
+  };
+  
+  int nthr = nthreads > 0 ? nthreads : (int) std::thread::hardware_concurrency();
+  if (nthr < 1) nthr = 1;
+  nthr = std::min(nthr, B);
+  
+  if (nthr == 1) {
+    worker(0, B);
+  } else {
+    std::vector<std::thread> pool;
+    pool.reserve(nthr);
+    const int chunk = (B + nthr - 1) / nthr;
+    for (int t = 0; t < nthr; ++t) {
+      const int lo = t * chunk, hi = std::min(B, lo + chunk);
+      if (lo < hi) pool.emplace_back(worker, lo, hi);
+    }
+    for (std::thread &th : pool) th.join();
+  }
+  
+  NumericMatrix out = wrap(arma::mat(beta_out.t()));
+  
+  SEXP dn = X_future_.attr("dimnames");
+  if (!Rf_isNull(dn)) {
+    List dnl(dn);
+    if (dnl.size() >= 2 && !Rf_isNull(dnl[1]))
+      out.attr("dimnames") = List::create(R_NilValue, dnl[1]);
+  }
+  out.attr("sigma_i") = NumericVector(sigma_i.begin(), sigma_i.end());
+  return out;
+}
+
+
+// ---------------------------------------------------------------------------
+//  loo-pll with P_n = centred skew-t:
+//      y_i ~ x_i' beta_{-i} + sigma_i * (S - mu),   S ~ ST(0, 1, alpha, nu),
+//  i.e. exactly the law simulated by ps_lm_fixed_par_st_alt (centered = TRUE).
+//
+//    par : c(log(sigma), alpha, log(df - 1))     (df > 1 so the mean exists)
+//
+//  To keep df fixed, e.g. at 3:
+//    function(x) npll_loo_lm_st_alt(c(x, log(3 - 1)), y, X, b_0, V_0)
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+double npll_loo_lm_st_alt(const arma::vec& par,
+                          const arma::vec& y,
+                          const arma::mat& X,
+                          const arma::vec& beta_0,
+                          const arma::mat& V_0) {
+  
+  const uword n = y.n_elem;
+  const uword p = X.n_cols;
+  
+  if (X.n_rows != n)       Rcpp::stop("nrow(X) must equal length(y)");
+  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) must equal ncol(X)");
+  if (V_0.n_rows != p || V_0.n_cols != p)
+    Rcpp::stop("V_0 must be p x p with p = ncol(X)");
+  if (par.n_elem != 3)
+    Rcpp::stop("par must be c(log(sigma), alpha, log(df - 1))");
+  if (!par.is_finite()) return BIG;
+  
+  const double sigma = std::exp(par(0));
+  const double alpha = par(1);
+  const double df    = std::exp(par(2)) + 1.0;
+  if (!(sigma > 0.0) || !std::isfinite(sigma) || !std::isfinite(df)) return BIG;
+  
+  vec beta, h, r;
+  loo_core_lm(y, X, beta_0, V_0, beta, h, r);
+  
+  const double shift     = st_mean(st_delta(alpha), df);
+  const double log_sigma = std::log(sigma);
+  double out = 0.0;
+  for (uword i = 0; i < n; ++i) {
+    const double sigma_i     = sigma / std::sqrt(1.0 - h(i));
+    const double log_sigma_i = log_sigma - 0.5 * std::log1p(-h(i));
+    const double z           = r(i) / sigma_i + shift;
+    out += dst_log_std(z, alpha, df) - log_sigma_i;
+  }
+  
+  if (!std::isfinite(out)) return BIG;
+  return -out;
+}

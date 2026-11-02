@@ -385,3 +385,29 @@ ps_single_iteration_t_1 <- function(X, beta, P, N, sigma, df) {
 }
 
 
+
+
+# Posterior summaries of each row of a matrix of draws (rows: quantities, columns: draws):
+# mean, standard deviation, 95% HPD interval (as robustBLME::hpd, vectorized) and the
+# 2.5% and 97.5% quantiles (type 7, as quantile()).
+summarize_draws <- function(draws, prob = 0.95) {
+  draws <- as.matrix(draws)
+  m <- nrow(draws)
+  n <- ncol(draws)
+  nn <- round(n * min(prob, 1 - prob))
+  s <- t(apply(draws, 1, sort))
+  if (m == 1) s <- matrix(s, nrow = 1)
+  len <- s[, (n - nn + 1):n, drop = FALSE] - s[, 1:nn, drop = FALSE]
+  k <- max.col(-len, ties.method = "first")
+  q_type7 <- function(a) {
+    h <- (n - 1) * a + 1
+    lo <- floor(h)
+    s[, lo] + (h - lo) * (s[, min(lo + 1, n)] - s[, lo])
+  }
+  cbind(mean = rowMeans(draws),
+        sd = sqrt(rowSums((draws - rowMeans(draws))^2) / (n - 1)),
+        hpd_lo = s[cbind(seq_len(m), k)],
+        hpd_hi = s[cbind(seq_len(m), n - nn + k)],
+        q025 = q_type7((1 - prob) / 2),
+        q975 = q_type7(1 - (1 - prob) / 2))
+}

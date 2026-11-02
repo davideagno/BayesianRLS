@@ -1,7 +1,7 @@
 # Analysis of the NHANES serum triglycerides dataset (Section 6 of the paper and
 # Sections S3-S4 of the supplementary material).
 #
-# Run from this folder (code/sec6_application/). Input: appl_data.RData (built by data.R).
+# Run from this folder (CODE/sec6_application/). Input: appl_data.RData (built by 1_download_data.R).
 # Output: figures in output/ and the posterior draws in output/appl_results.RData.
 #
 # Steps:

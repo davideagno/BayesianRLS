@@ -8,9 +8,10 @@
 
 cd "$(dirname "$0")"
 
-# On macOS, keep the machine fully awake (display, idle and system sleep) while running
+# On macOS, wake the machine fully and prevent idle and system sleep while running (the
+# display may still turn off)
 if command -v caffeinate >/dev/null && [ -z "$RUN_ALL_AWAKE" ]; then
-  RUN_ALL_AWAKE=1 exec caffeinate -dimsu "$0" "$@"
+  RUN_ALL_AWAKE=1 exec caffeinate -imsu "$0" "$@"
 fi
 
 LOG="$PWD/run_all.log"

@@ -14,7 +14,9 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 50
-n_obs <- 10*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 3  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 n_all <- 1e5
 sigma_true <- 2
 nSim <- 30
@@ -158,7 +160,7 @@ for (s in 1:nSim) {
   width_B[s] <- mean(width_ci_beta_B)
   
   
-  name_out <- paste0("sim_th_p", p, "_n", n_obs, "_t.RData")
+  name_out <- file.path("output", paste0("sim_th_p", p, "_n", n_obs, "_t.RData"))
   save(fr_Sn_A, fr_Sn_B, fr_Sn_1, fr_Sn_2, fr_Sn_Vn, fr_Vn_A, fr_Vn_B, fr_Vn_1, fr_Vn_2,
        time_A, time_B, time_1, time_2, mse_A, mse_B, mse_1, mse_2,
        in_ci_A, in_ci_B, in_ci_1, in_ci_2, in_ci_Vn, in_ci_Sn,

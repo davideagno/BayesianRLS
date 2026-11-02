@@ -14,14 +14,16 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 nSim <- 100
 n_test <- 1e4
 sigma_true <- 1
 df_true <- 5
 var_true <- (sigma_true^2) * (df_true / (df_true - 2))
 
-name_load <- paste0("../sec5.2_additive_models/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
+name_load <- paste0("../sec5.2_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
 load(name_load)
 
 mse_amt <- mse_amn <- mse_apx <- rep(NA, nSim)
@@ -125,7 +127,7 @@ for (s in 1:nSim) {
   
 }
 
-name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData")
+name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData"))
 save(mse_amt, mse_amn, mse_apx, in_ci_amt, in_ci_amn, in_ci_apx, 
      time_amt, time_amn, time_apx, width_amt, width_amn, width_apx, file = name_out)
 

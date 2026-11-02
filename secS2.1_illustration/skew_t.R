@@ -187,4 +187,5 @@ pl_p
 
 pl_tot <- gridExtra::arrangeGrob(pl_p, pl, ncol = 2)
 plot(pl_tot)
-# ggsave(filename = "pl_ill_skewt.pdf", plot = pl_tot, width = 9, height = 5)
+dir.create("output", showWarnings = FALSE)
+ggsave(file.path("output", "pl_ill_skewt.pdf"), plot = pl_tot, width = 9, height = 5)

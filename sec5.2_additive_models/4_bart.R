@@ -13,13 +13,15 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 nSim <- 100
 n_test <- 1e4
 
 sigma_true <- 1
 df_true <- 5
-name_load <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
+name_load <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData"))
 load(name_load)
 
 time_bart <- mse_bart <- rep(NA, nSim)
@@ -89,7 +91,7 @@ for (s in 1:nSim) {
   time_bart[s] <- t_bart[3]
   
   
-  name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_bart.RData")
+  name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_bart.RData"))
   save(mse_bart, in_ci_bart, width_ci_bart, ess_bart, time_bart, 
        mse_bart_q, in_ci_bart_q, width_bart_q, file = name_out)
 }

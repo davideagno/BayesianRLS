@@ -13,13 +13,15 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 nSim <- 100
 n_test <- 1e4
 
 sigma_true <- 1
 df_true <- 5
-name_load <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
+name_load <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData"))
 load(name_load)
 
 time_rls_norm <- time_est_norm <- time_opt_norm <- time_ps_norm <- rep(NA, nSim)
@@ -128,7 +130,7 @@ for (s in 1:nSim) {
   sigma_est_norm[s] <- sigma_opt
   
   
-  name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_norm_alt.RData")
+  name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_norm_alt.RData"))
   save(mse_rls_norm, ess_rls_norm, in_ci_rls_norm, width_ci_rls_norm, 
        time_rls_norm, time_opt_norm, time_est_norm, time_ps_norm, sigma_est_norm, 
        mse_rls_q_norm, in_ci_rls_q_norm, width_rls_q_norm, file = name_out)

@@ -13,7 +13,9 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 nSim <- 100
 n_test <- 1e4
 df_val <- 5
@@ -25,6 +27,6 @@ for (s in 1:nSim) {
   dat_sim[[s]] <- generate_am_t(n = n_obs, p = p, df = df_val, sigma = sigma_val, seed = s)
 }
 dat_test_sim <- generate_am_t(n = n_test, p = p, df = df_val, seed = 2026*p)
-name_file <- paste0("sim_p", p, "_n", n_obs, "_df", df_val, "_sigma", sigma_val, ".RData")
+name_file <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_val, "_sigma", sigma_val, ".RData"))
 save(dat_sim, dat_test_sim, file = name_file)
 

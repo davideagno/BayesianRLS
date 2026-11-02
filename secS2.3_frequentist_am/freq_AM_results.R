@@ -8,12 +8,14 @@ library(coda)
 library(brms)
 
 p <- 15
-n_obs <- 100*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
 df_true <- 5
 sigma_true <- 1
+sink(file.path("output", paste0("summary_n", n_mult, "p.txt")), split = TRUE)
 
-load(paste0("../sec5.2_additive_models/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData"))
+load(paste0("../sec5.2_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
+load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData")))
 
 
 round(c(mean(mse_rls), mean(mse_apx), mean(mse_amt), mean(mse_amn)), 3)
@@ -27,4 +29,4 @@ round(c(sd(rowMeans(in_ci_rls)), sd(rowMeans(in_ci_apx)), sd(rowMeans(in_ci_amt)
 round(c(sd(width_ci_rls), sd(width_apx), sd(width_amt), sd(width_amn)), 3)
 round(c(sd(time_rls), sd(time_apx), sd(time_amt), sd(time_amn)), 2)
 
-
+sink()

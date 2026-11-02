@@ -13,13 +13,15 @@ source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
+dir.create("output", showWarnings = FALSE)
 nSim <- 100
 n_test <- 1e4
 
 sigma_true <- 1
 df_true <- 5
-name_load <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
+name_load <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData"))
 load(name_load)
 
 time_rls <- time_est <- time_opt <- time_ps <- rep(NA, nSim)
@@ -127,7 +129,7 @@ for (s in 1:nSim) {
   sigma_est[s] <- sigma_opt
                                             
   
-  name_out <- paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData")
+  name_out <- file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
   save(mse_rls, ess_rls, in_ci_rls, width_ci_rls,
        time_rls, time_opt, time_est, time_ps, df_est, sigma_est, 
        mse_rls_q, in_ci_rls_q, width_rls_q, file = name_out)

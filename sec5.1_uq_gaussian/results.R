@@ -4,8 +4,12 @@
 rm(list = ls())
 
 p <- 50
-n_obs <- 10*p
-name_load <- paste0("sim_th_p", p, "_n", n_obs, "_norm.RData")
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 3  # n = n_mult * p
+n_obs <- n_mult*p
+model <- if (length(commandArgs(TRUE)) > 1) commandArgs(TRUE)[2] else "norm"  # "norm" or "t"
+dir_load <- if (model == "t") "../secS2.2_uq_student_t/output" else "output"
+name_load <- file.path(dir_load, paste0("sim_th_p", p, "_n", n_obs, "_", model, ".RData"))
+sink(file.path(dir_load, paste0("summary_", model, "_n", n_mult, "p.txt")), split = TRUE)
 load(name_load)
 
 
@@ -30,3 +34,5 @@ round(c(sd(log(mse_1)), sd(log(mse_2))), 3)
 round(c(sd(log(fr_Sn_1)), sd(log(fr_Sn_2))), 2)
 round(c(sd(rowMeans(in_ci_1)), sd(rowMeans(in_ci_2)), sd(rowMeans(in_ci_Sn))), 3) 
 round(c(sd(time_1), sd(time_2)), 1)
+
+sink()

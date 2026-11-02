@@ -123,5 +123,6 @@ pl_p
 
 pl_tot <- ggpubr::ggarrange(pl_p, pl)
 pl_tot
-# ggsave(filename = "pl_ill.pdf", plot = pl_tot, width = 9, height = 5)
+dir.create("output", showWarnings = FALSE)
+ggsave(file.path("output", "pl_ill.pdf"), plot = pl_tot, width = 9, height = 5)
 

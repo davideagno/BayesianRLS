@@ -7,23 +7,25 @@ library(coda)
 library(brms)
 
 p <- 15
-n_obs <- 30*p
+n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 30  # n = n_mult * p
+n_obs <- n_mult*p
 df_true <- 5
 sigma_true <- 1
+sink(file.path("output", paste0("summary_n", n_mult, "p.txt")), split = TRUE)
 
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
+load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData")))
 idx_rls <- which(is.na(mse_rls) == FALSE)
 length(idx_rls)
 
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_norm_alt.RData"))
+load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_norm_alt.RData")))
 idx_rls_norm <- which(is.na(mse_rls_norm) == FALSE)
 length(idx_rls_norm)
 
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_trad.RData"))
+load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_trad.RData")))
 idx_trad <- which(is.na(mse_trad) == FALSE)
 length(idx_trad)
 
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_bart.RData"))
+load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_bart.RData")))
 idx_bart <- which(is.na(mse_bart) == FALSE)
 length(idx_bart)
 
@@ -47,5 +49,4 @@ round(c(sd(rowMeans(width_rls_q)), sd(rowMeans(width_rls_q_norm)), sd(rowMeans(w
 round(c(sd(time_est+time_opt), sd(time_opt_norm+time_est_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 round(c(sd(time_rls), sd(time_rls_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 
-
-
+sink()

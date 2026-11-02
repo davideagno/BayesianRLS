@@ -1,3 +1,6 @@
+# Section 5.2: simulation with additive models (Table 2 and Table S3).
+# Run scripts 1-5 of this folder in order, from this folder, with n_obs = 30*p and
+# n_obs = 100*p. Step 1: simulate the training and test datasets.
 
 rm(list = ls())
 
@@ -5,8 +8,8 @@ library(mgcv)
 library(coda)
 library(brms)
 
-Rcpp::sourceCpp("RLS_functions.cpp")
-source("RLS_functions.R")
+Rcpp::sourceCpp("../RLS_functions.cpp")
+source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15

@@ -1,3 +1,4 @@
+# Section S2.1 of the supplement: illustration with Student-t errors (Figure S1).
 
 rm(list = ls())
 
@@ -7,8 +8,8 @@ library(brms)
 library(parallel)
 library(extraDistr)
 
-Rcpp::sourceCpp("RLS_functions.cpp")
-source("RLS_functions.R")
+Rcpp::sourceCpp("../RLS_functions.cpp")
+source("../RLS_functions.R")
 
 p <- 5
 n_obs <- 15

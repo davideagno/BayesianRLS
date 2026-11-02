@@ -1,3 +1,5 @@
+# Section 5.1: uncertainty quantification with Gaussian responses (Table 1).
+# Run from this folder, with n_obs = 3*p or 10*p; summaries in results.R.
 
 rm(list = ls())
 
@@ -6,8 +8,8 @@ library(coda)
 library(brms)
 library(parallel)
 
-Rcpp::sourceCpp("RLS_functions.cpp")
-source("RLS_functions.R")
+Rcpp::sourceCpp("../RLS_functions.cpp")
+source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 10

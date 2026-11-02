@@ -1,3 +1,4 @@
+# Section 5.2, step 3: traditional Bayesian additive model (BLM), fitted with brms.
 
 rm(list = ls())
 
@@ -7,8 +8,8 @@ library(brms)
 library(parallel)
 library(extraDistr)
 
-Rcpp::sourceCpp("RLS_functions.cpp")
-source("RLS_functions.R")
+Rcpp::sourceCpp("../RLS_functions.cpp")
+source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 15

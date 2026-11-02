@@ -1,3 +1,5 @@
+# Summaries for Table S2; also uses the RLS-t results of
+# ../sec5.2_additive_models/2_rls.R.
 
 rm(list = ls())
 
@@ -10,7 +12,7 @@ n_obs <- 100*p
 df_true <- 5
 sigma_true <- 1
 
-load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
+load(paste0("../sec5.2_additive_models/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
 load(paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData"))
 
 

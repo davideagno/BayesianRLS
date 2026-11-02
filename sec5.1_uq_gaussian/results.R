@@ -1,3 +1,5 @@
+# Summaries for Table 1 (output of sim_normal.R). For Table S1, load instead the
+# output of ../secS2.2_uq_student_t/sim_t.R (file suffix _t).
 
 rm(list = ls())
 

@@ -1,3 +1,5 @@
+# Section 6: download and preparation of the NHANES 2021-2023 data
+# (appl_data.RData).
 
 rm(list = ls())
 

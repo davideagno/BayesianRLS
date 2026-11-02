@@ -1,3 +1,6 @@
+# Section S2.2 of the supplement: uncertainty quantification with Student-t
+# responses (Table S1). Run from this folder, with n_obs = 3*p or 10*p; summaries
+# with ../sec5.1_uq_gaussian/results.R.
 
 rm(list = ls())
 
@@ -6,8 +9,8 @@ library(coda)
 library(brms)
 library(parallel)
 
-Rcpp::sourceCpp("RLS_functions.cpp")
-source("RLS_functions.R")
+Rcpp::sourceCpp("../RLS_functions.cpp")
+source("../RLS_functions.R")
 
 # Preliminary settings
 p <- 50

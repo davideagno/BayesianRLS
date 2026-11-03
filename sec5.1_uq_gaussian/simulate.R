@@ -153,7 +153,7 @@ for (s in 1:nSim) {
   
   
   # A := PS standard with \sigma_n^2 = \sigma^2 / a_n
-  t_A <- system.time(vv <- ps_lm_par_alt(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, nthreads = 7))
+  t_A <- system.time(vv <- ps_lm_par_alt(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, nthreads = 7, keep_sigma = FALSE))
   time_A[s] <- t_A[3]
   mse_A[s] <- mean((bb$beta - colMeans(vv))^2)
   cov_A <- cov(vv) / (sigma_true^2)

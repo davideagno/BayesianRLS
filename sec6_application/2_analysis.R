@@ -490,16 +490,19 @@ pl_var <- ggplot(df_var, aes(x = factor(gruppo), y = varianza, colour = variabil
   theme_appl +
   theme(legend.position = "top")
 
-# Convergence of a single forward path (Figure S8)
+# Convergence of a single forward path (Figure S8). The path is plotted at every step for
+# the first 1,000 forward samples and every 40 steps afterwards, to keep the pdf small.
+keep <- unique(c(1:1000, seq(1000, NROW(c_ps), by = 40)))
 df_conv <- data.frame(
-  conv = c(c_ps), fs = rep(1:NROW(c_ps), NCOL(c_ps)),
-  group = rep(1:NCOL(c_ps), each = NROW(c_ps)), title = "Convergence"
+  conv = c(c_ps[keep, ]), fs = rep(keep, NCOL(c_ps)),
+  group = rep(1:NCOL(c_ps), each = length(keep)), title = "Convergence"
 )
 pl_conv <- ggplot(df_conv) +
   facet_wrap(~title) +
   geom_line(aes(x = fs, y = conv, group = group), alpha = 0.7) +
   labs(x = "Number of forward samples", y = expression(L[1] ~ "distance")) +
   ylim(c(0, max(c_ps))) +
+  scale_x_continuous(labels = scales::label_comma()) +
   theme_appl +
   theme(
     legend.text.align = 0,
@@ -513,6 +516,6 @@ ggsave(file.path(fig_dir, "pl_rls.pdf"), pl_rls, width = 6.3, height = 4.1, devi
 ggsave(file.path(fig_dir, "pl_d.pdf"), pl_d, width = 6.3, height = 4.1, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 4.1, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_mgcv.pdf"), pl_gam, width = 6.3, height = 4.1, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_appl_conv.png"), pl_conv, width = 6.3, height = 4.4, dpi = 300)
+ggsave(file.path(fig_dir, "pl_appl_conv.pdf"), pl_conv, width = 6.3, height = 3, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_appl_var.pdf"), pl_var, width = 6.3, height = 4.4, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_appl_qq.pdf"), pl_qq, width = 6.3, height = 3, device = cairo_pdf)

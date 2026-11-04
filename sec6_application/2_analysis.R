@@ -479,11 +479,11 @@ pl_qq <- ggplot(df_qq, aes(x = teorici, y = res)) +
   theme_appl +
   theme(legend.position = "top")
 
-colori <- setNames(palette()[c(1, 8, 4, 5, 6, 2)], variabili)
 pl_var <- ggplot(df_var, aes(x = factor(gruppo), y = varianza, colour = variabile, group = variabile)) +
   geom_line() +
   geom_point(size = 2) +
-  scale_colour_manual(values = colori) +
+  scale_color_tableau(palette = "Tableau 10") +
+  guides(colour = guide_legend(nrow = 1)) +
   scale_x_discrete(labels = paste0("Q", 1:4)) +
   coord_cartesian(ylim = c(0, 0.8)) +
   labs(x = "Covariates quartile", y = "Response variance", colour = "Covariate") +
@@ -512,10 +512,10 @@ pl_conv <- ggplot(df_conv) +
   )
 
 ggsave(file.path(out_dir, "trace_plot.pdf"), pl_trace, width = 6.3, height = 2.4, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_rls.pdf"), pl_rls, width = 6.3, height = 4.1, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_d.pdf"), pl_d, width = 6.3, height = 4.1, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 4.1, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_mgcv.pdf"), pl_gam, width = 6.3, height = 4.1, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_rls.pdf"), pl_rls, width = 6.3, height = 3.8, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_d.pdf"), pl_d, width = 6.3, height = 3.4, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 3.8, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_mgcv.pdf"), pl_gam, width = 6.3, height = 3.8, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_appl_conv.pdf"), pl_conv, width = 6.3, height = 3, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_appl_var.pdf"), pl_var, width = 6.3, height = 4.4, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_appl_var.pdf"), pl_var, width = 6.3, height = 3.2, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_appl_qq.pdf"), pl_qq, width = 6.3, height = 3, device = cairo_pdf)

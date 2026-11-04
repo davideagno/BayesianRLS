@@ -515,4 +515,4 @@ ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 4.1, devi
 ggsave(file.path(fig_dir, "pl_mgcv.pdf"), pl_gam, width = 6.3, height = 4.1, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_appl_conv.png"), pl_conv, width = 6.3, height = 4.4, dpi = 300)
 ggsave(file.path(fig_dir, "pl_appl_var.pdf"), pl_var, width = 6.3, height = 4.4, device = cairo_pdf)
-ggsave(file.path(fig_dir, "pl_appl_qq.pdf"), pl_qq, width = 6.3, height = 4.4, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_appl_qq.pdf"), pl_qq, width = 6.3, height = 3, device = cairo_pdf)

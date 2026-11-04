@@ -1,7 +1,7 @@
-# Section 5.2 (Figure 1) and Section S2.1 of the supplement (Figure S2): illustration with
+# Section 5.2 (Figure 1) and Section S2.1 of the supplement: illustration with
 # skew Student-t errors.
-# Run from this folder. The errors are centred skew-t draws, and the skew-t P_n is
-# centred as well, so that its mean is x' beta (Assumption 1 of the paper).
+# Run from this folder. The errors are centered skew-t draws, and the skew-t P_n is
+# centered as well, so that its mean is x' beta (Assumption 1 of the paper).
 
 rm(list = ls())
 
@@ -85,7 +85,7 @@ theme_ill <- theme_light(base_size = 9) +
         plot.title = element_text(hjust = 0.5),
         legend.position = "top")
 
-# Data generating distribution and fitted P_n, both centred at zero
+# Data generating distribution and fitted P_n, both centered at zero
 y_val <- seq(-1.2, 2.4, length = 2000)
 df_plot <- data.frame(
   y     = rep(y_val, 3),
@@ -121,8 +121,5 @@ pl <- ggplot(df_d1, aes(x = beta, colour = distr, linetype = distr)) +
   theme_ill
 
 pl_tot <- ggpubr::ggarrange(pl_p, pl)
-# Paper figures are written directly to PAPER/figures when the script is run within the
-# paper project, and to output/ otherwise
-fig_dir <- if (dir.exists("../../PAPER/figures")) "../../PAPER/figures" else "output"
-dir.create(fig_dir, showWarnings = FALSE)
-ggsave(file.path(fig_dir, "pl_ill_skewt.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)
+# Fitted predictive distributions and posterior: diagnostic figure, not in the paper
+ggsave(file.path("output", "pl_ill_skewt.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)

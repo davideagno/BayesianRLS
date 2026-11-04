@@ -7,7 +7,7 @@
 #
 # Steps:
 #   1. data, train/test split and standardization
-#   2. selection of the predictive distribution (Figures S3-S4)
+#   2. selection of the predictive distribution (Figures S1-S2)
 #   3. spline design matrices
 #   4. predictive Bayes: LOO-PLL, posterior mean, predictive resampling
 #   5. traditional Bayesian additive model (brms) and frequentist additive models (mgcv)
@@ -87,7 +87,7 @@ am_formula <- y ~ s(age) + s(bmi) + s(hdl) + s(glucose) + s(sbp) + s(pir) +
 
 # 2. Selection of the predictive distribution (supplement, Section S3) ---------
 
-# Q-Q plot of the residuals of a Gaussian additive model (Figure S4)
+# Q-Q plot of the residuals of a Gaussian additive model (Figure S2)
 fit_a <- mgcv::gam(am_formula, data = df_mgcv, method = "REML", family = gaussian())
 res <- residuals(fit_a)
 nus <- c(9, 10000)
@@ -107,7 +107,7 @@ titoli <- c('"Student-t" ~ (nu == 9)', "Gaussian")
 df_qq$nu <- factor(df_qq$nu, levels = livelli, labels = titoli)
 df_line$nu <- factor(df_line$nu, levels = livelli, labels = titoli)
 
-# Variance of the response within the quartiles of each covariate (Figure S3)
+# Variance of the response within the quartiles of each covariate (Figure S1)
 quartile_var <- function(x) {
   q <- quantile(x, c(0.25, 0.50, 0.75))
   c(
@@ -191,7 +191,7 @@ c(df = df_opt, sigma = sigma_opt)
 # Posterior mean
 t_est <- system.time(bb <- rls_lambda_appl(y, X_splines, b_0, lambda_opt, Omega, n_par))
 
-# Convergence of a single forward path (Figure S8)
+# Convergence of a single forward path (Figure S6)
 set.seed(123)
 c_ps <- ps_rs_conv_t_1_alt(X_splines, bb$beta, bb$P, 4e5, 1, df_opt, sigma_opt)
 
@@ -351,7 +351,7 @@ clip_bands <- function(df_fit, df_pts) {
 }
 
 # One colour per method, for both the line and its band: predictive Bayes in orange and
-# traditional Bayes in blue (as in Figure S5), mgcv in grey
+# traditional Bayes in blue (as in Figure S3), mgcv in grey
 partial_effects_plot <- function(df_fit, df_pts, colour) {
   ggplot(df_fit, aes(x = x)) +
     geom_ribbon(aes(ymin = low, ymax = upp), fill = colour, alpha = 0.25) +
@@ -378,7 +378,7 @@ df_pts_rls$var <- factor(df_pts_rls$var, levels = lev_v)
 df_fit_rls <- clip_bands(df_fit_rls, df_pts_rls)
 pl_rls <- partial_effects_plot(df_fit_rls, df_pts_rls, "#fc7d0b")
 
-# Traditional Bayes (Figure S6): posterior mean of each effect and partial residuals
+# Traditional Bayes (Figure S4): posterior mean of each effect and partial residuals
 # computed from the posterior mean of the coefficients
 df_fit_blm <- do.call(rbind, lapply(lev_v, function(v) {
   e <- effects[[v]]
@@ -396,7 +396,7 @@ df_pts_blm$var <- factor(df_pts_blm$var, levels = lev_v)
 df_fit_blm <- clip_bands(df_fit_blm, df_pts_blm)
 pl_blm <- partial_effects_plot(df_fit_blm, df_pts_blm, "#1170aa")
 
-# Frequentist additive model with Student-t likelihood (Figure S7): pointwise 95%
+# Frequentist additive model with Student-t likelihood (Figure S5): pointwise 95%
 # confidence bands; partial residuals are response residuals plus the smooth term
 z <- qnorm(0.975)
 term_lab <- setNames(paste0("s(", var_col, ")"), lev_v)
@@ -422,7 +422,7 @@ df_pts_gam$var <- factor(df_pts_gam$var, levels = lev_v)
 df_fit_gam <- clip_bands(df_fit_gam, df_pts_gam)
 pl_gam <- partial_effects_plot(df_fit_gam, df_pts_gam, "#57606c")
 
-# Posterior densities of the intercept and of the ethnicity coefficients (Figure S5).
+# Posterior densities of the intercept and of the ethnicity coefficients (Figure S3).
 # Columns 2-6 are ethn1, ethn2, ethn4, ethn6 and ethn7 (codes of RIDRETH3); the baseline
 # is non-Hispanic White (code 3).
 titoli_d <- c(
@@ -470,7 +470,7 @@ pl_trace <- ggplot(df_tr, aes(x = iter, y = value)) +
   labs(x = "Iteration", y = "Regression Coefficient") +
   theme_appl
 
-# Selection of the predictive distribution (Figures S3-S4)
+# Selection of the predictive distribution (Figures S1-S2)
 pl_qq <- ggplot(df_qq, aes(x = teorici, y = res)) +
   geom_point() +
   geom_abline(data = df_line, aes(slope = slope, intercept = intercept), colour = "red") +
@@ -490,7 +490,7 @@ pl_var <- ggplot(df_var, aes(x = factor(gruppo), y = varianza, colour = variabil
   theme_appl +
   theme(legend.position = "top")
 
-# Convergence of a single forward path (Figure S8). The path is plotted at every step for
+# Convergence of a single forward path (Figure S6). The path is plotted at every step for
 # the first 1,000 forward samples and every 40 steps afterwards, to keep the pdf small.
 keep <- unique(c(1:1000, seq(1000, NROW(c_ps), by = 40)))
 df_conv <- data.frame(

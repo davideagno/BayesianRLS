@@ -1,4 +1,4 @@
-# Section 5.2 (Figure 1) and Section S2.1 of the supplement (Figure S1): illustration with
+# Section 5.2 (Figure 1) and Section S2.1 of the supplement: illustration with
 # Student-t errors.
 
 rm(list = ls())
@@ -123,9 +123,6 @@ pl_p
 
 pl_tot <- ggpubr::ggarrange(pl_p, pl)
 pl_tot
-# Paper figures are written directly to PAPER/figures when the script is run within the
-# paper project, and to output/ otherwise
-fig_dir <- if (dir.exists("../../PAPER/figures")) "../../PAPER/figures" else "output"
-dir.create(fig_dir, showWarnings = FALSE)
-ggsave(file.path(fig_dir, "pl_ill.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)
+# Fitted predictive distributions and posterior: diagnostic figure, not in the paper
+ggsave(file.path("output", "pl_ill.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)
 

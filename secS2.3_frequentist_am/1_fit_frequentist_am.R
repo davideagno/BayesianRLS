@@ -1,5 +1,5 @@
 # Section S2.3 of the supplement: comparison with frequentist additive models
-# (Table S2). Uses the datasets simulated by ../sec5.2_additive_models/1_simulate_data.R.
+# (Table S2). Uses the datasets simulated by ../sec5.3_additive_models/1_simulate_data.R.
 
 rm(list = ls())
 
@@ -23,7 +23,7 @@ sigma_true <- 1
 df_true <- 5
 var_true <- (sigma_true^2) * (df_true / (df_true - 2))
 
-name_load <- paste0("../sec5.2_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
+name_load <- paste0("../sec5.3_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, ".RData")
 load(name_load)
 
 mse_amt <- mse_amn <- mse_apx <- rep(NA, nSim)

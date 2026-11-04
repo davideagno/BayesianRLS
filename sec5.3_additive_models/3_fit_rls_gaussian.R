@@ -1,4 +1,4 @@
-# Section 5.2, step 2: proposed method with Gaussian P_n (RLS-n).
+# Section 5.3, step 2: proposed method with Gaussian P_n (RLS-n).
 
 rm(list = ls())
 

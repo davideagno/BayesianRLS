@@ -1,4 +1,4 @@
-# Section 5.2, step 5: summaries for Table 2.
+# Section 5.3, step 5: summaries for Table 2.
 
 rm(list = ls())
 

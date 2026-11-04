@@ -1,5 +1,5 @@
 # Summaries for Table S2; also uses the RLS-t results of
-# ../sec5.2_additive_models/2_fit_rls_student_t.R.
+# ../sec5.3_additive_models/2_fit_rls_student_t.R.
 
 rm(list = ls())
 
@@ -14,7 +14,7 @@ df_true <- 5
 sigma_true <- 1
 sink(file.path("output", paste0("summary_n", n_mult, "p.txt")), split = TRUE)
 
-load(paste0("../sec5.2_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
+load(paste0("../sec5.3_additive_models/output/sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_rls_alt.RData"))
 load(file.path("output", paste0("sim_p", p, "_n", n_obs, "_df", df_true, "_sigma", sigma_true, "_AM.RData")))
 
 

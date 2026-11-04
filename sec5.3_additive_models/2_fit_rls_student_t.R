@@ -1,4 +1,4 @@
-# Section 5.2, step 2: proposed method with Student-t P_n (RLS-t).
+# Section 5.3, step 2: proposed method with Student-t P_n (RLS-t).
 
 rm(list = ls())
 

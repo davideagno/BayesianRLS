@@ -1,4 +1,5 @@
-# Section S2.1 of the supplement: illustration with skew Student-t errors (Figure S2).
+# Section 5.2 (Figure 1) and Section S2.1 of the supplement (Figure S2): illustration with
+# skew Student-t errors.
 # Run from this folder. The errors are centred skew-t draws, and the skew-t P_n is
 # centred as well, so that its mean is x' beta (Assumption 1 of the paper).
 

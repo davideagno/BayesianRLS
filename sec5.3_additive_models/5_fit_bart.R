@@ -1,4 +1,4 @@
-# Section 5.2, step 4: BART.
+# Section 5.3, step 4: BART.
 
 rm(list = ls())
 

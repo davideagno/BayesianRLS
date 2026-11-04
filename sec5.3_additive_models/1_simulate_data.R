@@ -1,4 +1,4 @@
-# Section 5.2: simulation with additive models (Table 2 and Table S3).
+# Section 5.3: simulation with additive models (Table 2 and Table S3).
 # Run scripts 1-6 of this folder in order, from this folder, with n_obs = 30*p and
 # n_obs = 100*p. Step 1: simulate the training and test datasets.
 

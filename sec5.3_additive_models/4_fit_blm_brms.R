@@ -1,4 +1,4 @@
-# Section 5.2, step 3: traditional Bayesian additive model (BLM), fitted with brms.
+# Section 5.3, step 3: traditional Bayesian additive model (BLM), fitted with brms.
 
 rm(list = ls())
 

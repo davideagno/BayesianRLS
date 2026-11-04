@@ -255,7 +255,7 @@ fit_blm <- function(stanvars) {
   )
 }
 
-# Gamma(2, 0.5) prior, as in the simulation study of Section 5.2
+# Gamma(2, 0.5) prior, as in the simulation study of Section 5.3
 t_blm <- system.time(blm <- fit_blm(blm_stanvars(2, 0.5)))
 post_samp <- coda::as.mcmc(as.matrix(blm))
 ess_blm <- mean(coda::effectiveSize(post_samp[, 1:NCOL(X_splines)]))
@@ -362,7 +362,7 @@ partial_effects_plot <- function(df_fit, df_pts, colour) {
     theme_appl
 }
 
-# Predictive Bayes (Figure 1)
+# Predictive Bayes (Figure 2)
 df_fit_rls <- do.call(rbind, lapply(lev_v, function(v) {
   e <- effects[[v]]
   data.frame(

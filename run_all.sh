@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs all the analyses of the paper, sequentially (the fastest first), from the folder of each script.
-# Usage: ./run_all.sh [folder ...]   (e.g. ./run_all.sh sec5.2_additive_models; default: all)
+# Usage: ./run_all.sh [folder ...]   (e.g. ./run_all.sh sec5.3_additive_models; default: all)
 #
 # Output goes to <folder>/output/. The log run_all.log records, for each step, the
 # elapsed time and the number of system sleep events (macOS) during the step: computing
@@ -18,21 +18,21 @@ LOG="$PWD/run_all.log"
 FOLDERS="$*"
 
 steps=(
-  "secS2.1_illustration student_t_errors.R"
-  "secS2.1_illustration skew_t_errors.R"
-  "secS2.1_illustration posteriors_figure.R"
-  "sec5.2_additive_models 1_simulate_data.R 30"
-  "sec5.2_additive_models 1_simulate_data.R 100"
-  "sec5.2_additive_models 2_fit_rls_student_t.R 30"
-  "sec5.2_additive_models 2_fit_rls_student_t.R 100"
-  "sec5.2_additive_models 3_fit_rls_gaussian.R 30"
-  "sec5.2_additive_models 3_fit_rls_gaussian.R 100"
-  "sec5.2_additive_models 4_fit_blm_brms.R 30"
-  "sec5.2_additive_models 4_fit_blm_brms.R 100"
-  "sec5.2_additive_models 5_fit_bart.R 30"
-  "sec5.2_additive_models 5_fit_bart.R 100"
-  "sec5.2_additive_models 6_summarize_table.R 30"
-  "sec5.2_additive_models 6_summarize_table.R 100"
+  "sec5.2_illustration student_t_errors.R"
+  "sec5.2_illustration skew_t_errors.R"
+  "sec5.2_illustration posteriors_figure.R"
+  "sec5.3_additive_models 1_simulate_data.R 30"
+  "sec5.3_additive_models 1_simulate_data.R 100"
+  "sec5.3_additive_models 2_fit_rls_student_t.R 30"
+  "sec5.3_additive_models 2_fit_rls_student_t.R 100"
+  "sec5.3_additive_models 3_fit_rls_gaussian.R 30"
+  "sec5.3_additive_models 3_fit_rls_gaussian.R 100"
+  "sec5.3_additive_models 4_fit_blm_brms.R 30"
+  "sec5.3_additive_models 4_fit_blm_brms.R 100"
+  "sec5.3_additive_models 5_fit_bart.R 30"
+  "sec5.3_additive_models 5_fit_bart.R 100"
+  "sec5.3_additive_models 6_summarize_table.R 30"
+  "sec5.3_additive_models 6_summarize_table.R 100"
   "secS2.3_frequentist_am 1_fit_frequentist_am.R 30"
   "secS2.3_frequentist_am 1_fit_frequentist_am.R 100"
   "secS2.3_frequentist_am 2_summarize_table.R 30"

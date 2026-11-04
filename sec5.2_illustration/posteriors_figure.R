@@ -1,4 +1,4 @@
-# Section 5.2: posterior distributions of a regression coefficient in the two examples
+# Section 5.2 (Figure 1): posterior distributions of a regression coefficient in the two examples
 # (Student-t and skew Student-t errors), with the matching and the Gaussian P_n.
 # Run after student_t_errors.R and skew_t_errors.R, which save the draws in output/.
 

@@ -63,7 +63,7 @@ analysis <- dat %>%
   report("all participants") %>%
   filter(RIDSTATR == 2)                    %>% report("MEC examined") %>%
   filter(!is.na(LBXTLG))                    %>% report("has triglycerides (fasting sub)") %>%
-  filter(RIDAGEYR <= 40)   %>% report("adults 40+") %>%
+  filter(RIDAGEYR <= 40)   %>% report("aged 40 or younger") %>%
   
   filter(PHAFSTHR >= 12, PHAFSTHR <= 24)    %>% report("fasted 12-24 h") %>%
   

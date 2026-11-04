@@ -2,11 +2,12 @@
 # Sections S3-S4 of the supplementary material).
 #
 # Run from this folder (CODE/sec6_application/). Input: appl_data.RData (built by 1_download_data.R).
-# Output: figures in output/ and the posterior draws in output/appl_results.RData.
+# Output: paper figures in ../../PAPER/figures (or output/), the trace plot and the
+# posterior draws in output/.
 #
 # Steps:
 #   1. data, train/test split and standardization
-#   2. selection of the predictive distribution (Figures S9-S10)
+#   2. selection of the predictive distribution (Figures S3-S4)
 #   3. spline design matrices
 #   4. predictive Bayes: LOO-PLL, posterior mean, predictive resampling
 #   5. traditional Bayesian additive model (brms) and frequentist additive models (mgcv)
@@ -86,7 +87,7 @@ am_formula <- y ~ s(age) + s(bmi) + s(hdl) + s(glucose) + s(sbp) + s(pir) +
 
 # 2. Selection of the predictive distribution (supplement, Section S3) ---------
 
-# Q-Q plot of the residuals of a Gaussian additive model (Figure S10)
+# Q-Q plot of the residuals of a Gaussian additive model (Figure S4)
 fit_a <- mgcv::gam(am_formula, data = df_mgcv, method = "REML", family = gaussian())
 res <- residuals(fit_a)
 nus <- c(9, 10000)
@@ -106,7 +107,7 @@ titoli <- c('"Student-t" ~ (nu == 9)', "Gaussian")
 df_qq$nu <- factor(df_qq$nu, levels = livelli, labels = titoli)
 df_line$nu <- factor(df_line$nu, levels = livelli, labels = titoli)
 
-# Variance of the response within the quartiles of each covariate (Figure S9)
+# Variance of the response within the quartiles of each covariate (Figure S3)
 quartile_var <- function(x) {
   q <- quantile(x, c(0.25, 0.50, 0.75))
   c(
@@ -121,12 +122,11 @@ v_glucose <- quartile_var(df_train$glucose)
 v_sbp <- quartile_var(df_train$sbp)
 v_pir <- quartile_var(df_train$pir)
 v_pir[4] <- var(y[df_train$pir == 5.00]) # pir is top-coded at 5
-v_ethn <- sapply(1:4, function(k) var(y[df_train$ethn == k]))
 
-variabili <- c("PIR", "BMI", "Age", "Glucose", "SBP", "Ethnicity", "HDL")
+variabili <- c("PIR", "BMI", "Age", "Glucose", "SBP", "HDL")
 df_var <- data.frame(
   gruppo = rep(1:4, times = length(variabili)),
-  varianza = c(v_pir, v_bmi, v_age, v_glucose, v_sbp, v_ethn, v_hdl),
+  varianza = c(v_pir, v_bmi, v_age, v_glucose, v_sbp, v_hdl),
   variabile = factor(rep(variabili, each = 4), levels = variabili)
 )
 
@@ -224,20 +224,20 @@ for (j in seq_len(P)) {
   Om <- as.matrix(Omega[[j]])
   Omega_arr[j, seq_len(d[j]), seq_len(d[j])] <- (Om + t(Om)) / 2
 }
-stanvars <-
+# Gamma(a, b) prior on the smoothing parameters
+blm_stanvars <- function(a, b) {
   stanvar(as.integer(P), name = "P", scode = "  int<lower=1> P;") +
-  stanvar(as.integer(Dmax), name = "Dmax", scode = "  int<lower=1> Dmax;") +
-  stanvar(as.integer(d), name = "dblk", scode = "  array[P] int<lower=1> dblk;") +
-  stanvar(strt, name = "strt", scode = "  array[P] int<lower=1> strt;") +
-  stanvar(as.integer(ranks), name = "rk", scode = "  array[P] int<lower=1> rk;") +
-  stanvar(Omega_arr, name = "Omega", scode = "  array[P] matrix[Dmax, Dmax] Omega;") +
-  stanvar(
-    scode = "  vector<lower=0>[P] lambda;  // smoothing parameters",
-    block = "parameters"
-  ) +
-  stanvar(scode = "
-  // weakly-informative prior on the smoothing parameters
-  target += gamma_lpdf(lambda | 0.001, 0.001);
+    stanvar(as.integer(Dmax), name = "Dmax", scode = "  int<lower=1> Dmax;") +
+    stanvar(as.integer(d), name = "dblk", scode = "  array[P] int<lower=1> dblk;") +
+    stanvar(strt, name = "strt", scode = "  array[P] int<lower=1> strt;") +
+    stanvar(as.integer(ranks), name = "rk", scode = "  array[P] int<lower=1> rk;") +
+    stanvar(Omega_arr, name = "Omega", scode = "  array[P] matrix[Dmax, Dmax] Omega;") +
+    stanvar(
+      scode = "  vector<lower=0>[P] lambda;  // smoothing parameters",
+      block = "parameters"
+    ) +
+    stanvar(scode = paste0("
+  target += gamma_lpdf(lambda | ", a, ", ", b, ");
   // beta ~ N(0, sigma^2 * S^{-1}),  S = blockdiag(lambda_j * Omega_j)
   // blocks may differ in size: block j occupies b[strt[j] : strt[j]+dblk[j]-1]
   for (j in 1:P) {
@@ -245,14 +245,25 @@ stanvars <-
     matrix[dblk[j], dblk[j]] Om_j = block(Omega[j], 1, 1, dblk[j], dblk[j]);
     target += -0.5 * (lambda[j] / square(sigma)) * quad_form_sym(Om_j, beta_j)
               + 0.5 * rk[j] * log(lambda[j]) - rk[j] * log(sigma);
-  }", block = "model")
-t_blm <- system.time(blm <- brms::brm(
-  formula = y ~ -1 + ., data = dat_splines, family = student(),
-  stanvars = stanvars, prior = prior("", class = "b"),
-  chains = 5, cores = 5, iter = 20000, warmup = 18000, seed = 1
-))
+  }"), block = "model")
+}
+fit_blm <- function(stanvars) {
+  brms::brm(
+    formula = y ~ -1 + ., data = dat_splines, family = student(),
+    stanvars = stanvars, prior = prior("", class = "b"),
+    chains = 5, cores = 5, iter = 20000, warmup = 18000, seed = 1
+  )
+}
+
+# Gamma(2, 0.5) prior, as in the simulation study of Section 5.2
+t_blm <- system.time(blm <- fit_blm(blm_stanvars(2, 0.5)))
 post_samp <- coda::as.mcmc(as.matrix(blm))
 ess_blm <- mean(coda::effectiveSize(post_samp[, 1:NCOL(X_splines)]))
+
+# Sensitivity to a vague Gamma(0.001, 0.001) prior on the smoothing parameters
+t_blm_vague <- system.time(blm_vague <- fit_blm(blm_stanvars(0.001, 0.001)))
+post_vague <- coda::as.mcmc(as.matrix(blm_vague))
+ess_blm_vague <- mean(coda::effectiveSize(post_vague[, 1:NCOL(X_splines)]))
 
 # Frequentist additive models (mgcv)
 fit_t <- mgcv::gam(am_formula, data = df_mgcv, method = "REML", family = scat())
@@ -264,17 +275,19 @@ fit_n <- mgcv::gam(am_formula, data = df_mgcv, method = "REML", family = gaussia
 pm_blm <- colMeans(post_samp[, 1:NCOL(X_splines)])
 mse_rls <- mean((df_test$y - c(X_splines_test %*% bb$beta))^2)
 mse_blm <- mean((df_test$y - c(X_splines_test %*% pm_blm))^2)
+mse_blm_vague <- mean((df_test$y - c(X_splines_test %*% colMeans(post_vague[, 1:NCOL(X_splines)])))^2)
 mse_am_t <- mean((df_test$y - c(X_splines_test %*% fit_t$coefficients))^2)
 mse_am_n <- mean((df_test$y - c(X_splines_test %*% fit_n$coefficients))^2)
-c(rls = mse_rls, blm = mse_blm, am_t = mse_am_t, am_n = mse_am_n)
+c(rls = mse_rls, blm = mse_blm, blm_vague = mse_blm_vague, am_t = mse_am_t, am_n = mse_am_n)
 
 c(
   rls_pm = t_opt[[3]] + t_est[[3]], rls_ps = t_ps[[3]],
-  rls_tot = t_opt[[3]] + t_est[[3]] + t_ps[[3]], blm = t_blm[[3]]
+  rls_tot = t_opt[[3]] + t_est[[3]] + t_ps[[3]], blm = t_blm[[3]], blm_vague = t_blm_vague[[3]]
 )
-ess_blm
+c(ess_blm = ess_blm, ess_blm_vague = ess_blm_vague)
+c(divergent = rstan::get_num_divergent(blm$fit), divergent_vague = rstan::get_num_divergent(blm_vague$fit))
 
-save(beta_ps, post_samp, c_ps, opt, opt_skt, bb, t_opt, t_est, t_ps, t_blm,
+save(beta_ps, post_samp, post_vague, c_ps, opt, opt_skt, bb, t_opt, t_est, t_ps, t_blm, t_blm_vague,
   file = file.path(out_dir, "appl_results.RData")
 )
 
@@ -337,30 +350,24 @@ clip_bands <- function(df_fit, df_pts) {
   df_fit
 }
 
-partial_effects_plot <- function(df_fit, df_pts, fill, colour, alpha) {
+# One colour per method, for both the line and its band: predictive Bayes in orange and
+# traditional Bayes in blue (as in Figure S5), mgcv in grey
+partial_effects_plot <- function(df_fit, df_pts, colour) {
   ggplot(df_fit, aes(x = x)) +
-    geom_ribbon(aes(ymin = low, ymax = upp), fill = fill, alpha = alpha) +
-    geom_line(aes(y = fit), colour = colour, linewidth = 0.8) +
-    geom_point(aes(y = pres), data = df_pts, size = 0.2, alpha = 0.3) +
+    geom_ribbon(aes(ymin = low, ymax = upp), fill = colour, alpha = 0.25) +
+    geom_line(aes(y = fit), colour = colour, linewidth = 0.7) +
+    geom_point(aes(y = pres), data = df_pts, size = 0.3, colour = "gray35", alpha = 0.6) +
     facet_wrap(~var, nrow = 2, ncol = 3, scales = "free") +
     labs(x = NULL, y = "Partial effect") +
     theme_appl
 }
 
-# Predictive Bayes (Figure 2). The HPD limits for BMI and HDL are smoothed with
-# Tukey's running median smoother before plotting.
-smoothed <- c("BMI", "HDL")
+# Predictive Bayes (Figure 1)
 df_fit_rls <- do.call(rbind, lapply(lev_v, function(v) {
   e <- effects[[v]]
-  low <- e$ci_ps[, 1]
-  upp <- e$ci_ps[, 2]
-  if (v %in% smoothed) {
-    low <- smooth(low, twiceit = TRUE)
-    upp <- smooth(upp, twiceit = TRUE)
-  }
   data.frame(
     x = to_orig(grid[[v]], v), fit = as.vector(e$new_splines %*% bb$beta[idx[[v]]]),
-    low = as.vector(low), upp = as.vector(upp), var = v
+    low = e$ci_ps[, 1], upp = e$ci_ps[, 2], var = v
   )
 }))
 df_pts_rls <- do.call(rbind, lapply(lev_v, function(v) {
@@ -369,7 +376,7 @@ df_pts_rls <- do.call(rbind, lapply(lev_v, function(v) {
 df_fit_rls$var <- factor(df_fit_rls$var, levels = lev_v)
 df_pts_rls$var <- factor(df_pts_rls$var, levels = lev_v)
 df_fit_rls <- clip_bands(df_fit_rls, df_pts_rls)
-pl_rls <- partial_effects_plot(df_fit_rls, df_pts_rls, "blue", "red2", 0.2)
+pl_rls <- partial_effects_plot(df_fit_rls, df_pts_rls, "#fc7d0b")
 
 # Traditional Bayes (Figure S6): posterior mean of each effect and partial residuals
 # computed from the posterior mean of the coefficients
@@ -387,7 +394,7 @@ df_pts_blm <- do.call(rbind, lapply(lev_v, function(v) {
 df_fit_blm$var <- factor(df_fit_blm$var, levels = lev_v)
 df_pts_blm$var <- factor(df_pts_blm$var, levels = lev_v)
 df_fit_blm <- clip_bands(df_fit_blm, df_pts_blm)
-pl_blm <- partial_effects_plot(df_fit_blm, df_pts_blm, "orange", "darkgreen", 0.3)
+pl_blm <- partial_effects_plot(df_fit_blm, df_pts_blm, "#1170aa")
 
 # Frequentist additive model with Student-t likelihood (Figure S7): pointwise 95%
 # confidence bands; partial residuals are response residuals plus the smooth term
@@ -413,12 +420,16 @@ df_pts_gam <- do.call(rbind, lapply(lev_v, function(v) {
 df_fit_gam$var <- factor(df_fit_gam$var, levels = lev_v)
 df_pts_gam$var <- factor(df_pts_gam$var, levels = lev_v)
 df_fit_gam <- clip_bands(df_fit_gam, df_pts_gam)
-pl_gam <- partial_effects_plot(df_fit_gam, df_pts_gam, "pink3", "purple4", 0.2)
+pl_gam <- partial_effects_plot(df_fit_gam, df_pts_gam, "#57606c")
 
-# Posterior densities of the intercept and of the first four ethnicity coefficients
-# (Figure S5). Columns 2-5 are ethn1, ethn2, ethn4 and ethn6 (codes of RIDRETH3).
-titoli_d <- c("Intercept", "Mexican American", "Other Hispanic", "Non-Hispanic Black", "Other race")
-df_d <- do.call(rbind, lapply(1:5, function(j) {
+# Posterior densities of the intercept and of the ethnicity coefficients (Figure S5).
+# Columns 2-6 are ethn1, ethn2, ethn4, ethn6 and ethn7 (codes of RIDRETH3); the baseline
+# is non-Hispanic White (code 3).
+titoli_d <- c(
+  "Intercept", "Mexican American", "Other Hispanic", "Non-Hispanic Black",
+  "Non-Hispanic Asian", "Other or multiracial"
+)
+df_d <- do.call(rbind, lapply(1:6, function(j) {
   data.frame(rls = as.numeric(beta_ps[, j]), blm = as.numeric(post_samp[, j]), title = titoli_d[j])
 }))
 df_d$title <- factor(df_d$title, levels = titoli_d)
@@ -440,7 +451,7 @@ pl_d <- ggplot(df_d) +
     legend.position = "top"
   )
 
-# Trace plots of a selected coefficient (Figure 1)
+# Trace plots of a selected coefficient (diagnostic, saved in output/)
 jdx <- 30
 lab <- c("Traditional Bayes", "Predictive Bayes")
 s1 <- as.numeric(post_samp[, jdx])
@@ -459,7 +470,7 @@ pl_trace <- ggplot(df_tr, aes(x = iter, y = value)) +
   labs(x = "Iteration", y = "Regression Coefficient") +
   theme_appl
 
-# Selection of the predictive distribution (Figures S9-S10)
+# Selection of the predictive distribution (Figures S3-S4)
 pl_qq <- ggplot(df_qq, aes(x = teorici, y = res)) +
   geom_point() +
   geom_abline(data = df_line, aes(slope = slope, intercept = intercept), colour = "red") +
@@ -468,7 +479,7 @@ pl_qq <- ggplot(df_qq, aes(x = teorici, y = res)) +
   theme_appl +
   theme(legend.position = "top")
 
-colori <- setNames(palette()[c(1, 8, 4, 5, 6, 3, 2)], variabili)
+colori <- setNames(palette()[c(1, 8, 4, 5, 6, 2)], variabili)
 pl_var <- ggplot(df_var, aes(x = factor(gruppo), y = varianza, colour = variabile, group = variabile)) +
   geom_line() +
   geom_point(size = 2) +
@@ -497,7 +508,7 @@ pl_conv <- ggplot(df_conv) +
     legend.position = "top"
   )
 
-ggsave(file.path(fig_dir, "trace_plot.pdf"), pl_trace, width = 6.3, height = 2.4, device = cairo_pdf)
+ggsave(file.path(out_dir, "trace_plot.pdf"), pl_trace, width = 6.3, height = 2.4, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_rls.pdf"), pl_rls, width = 6.3, height = 4.1, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_d.pdf"), pl_d, width = 6.3, height = 4.1, device = cairo_pdf)
 ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 4.1, device = cairo_pdf)

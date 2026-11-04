@@ -26,7 +26,7 @@ round(c(mean(time_rls), mean(time_apx), mean(time_amt), mean(time_amn)), 2)
 
 round(c(sd(mse_rls), sd(mse_apx), sd(mse_amt), sd(mse_amn)), 3)
 round(c(sd(rowMeans(in_ci_rls)), sd(rowMeans(in_ci_apx)), sd(rowMeans(in_ci_amt)), sd(rowMeans(in_ci_amn))), 3)
-round(c(sd(width_ci_rls), sd(width_apx), sd(width_amt), sd(width_amn)), 3)
+round(c(sd(colMeans(width_ci_rls)), sd(width_apx), sd(width_amt), sd(width_amn)), 3)
 round(c(sd(time_rls), sd(time_apx), sd(time_amt), sd(time_amn)), 2)
 
 sink()

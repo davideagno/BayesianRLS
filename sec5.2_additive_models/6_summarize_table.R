@@ -49,4 +49,10 @@ round(c(sd(rowMeans(width_rls_q)), sd(rowMeans(width_rls_q_norm)), sd(rowMeans(w
 round(c(sd(time_est+time_opt), sd(time_opt_norm+time_est_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 round(c(sd(time_rls), sd(time_rls_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 
+# Table S3: average ESS of the draws of f(x) across the test set (mean and sd over datasets).
+# The predictive resampling draws are independent, so their ESS is B by construction; the
+# values estimated by coda are reported only as a check.
+round(c(mean(ess_rls), mean(ess_rls_norm), mean(ess_trad[,idx_trad]), mean(ess_bart)), 1)
+round(c(sd(colMeans(ess_rls)), sd(colMeans(ess_rls_norm)), sd(colMeans(ess_trad[,idx_trad])), sd(colMeans(ess_bart))), 1)
+
 sink()

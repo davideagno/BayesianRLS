@@ -8,6 +8,8 @@ recursive least squares**, arXiv.
 The shared functions are in `RLS_functions.R` and `RLS_functions.cpp`. Each folder corresponds to a
 section of the paper or of the supplementary material. Its scripts are run from that folder, and
 write their results (`.RData` files, figures and summary tables) to the subfolder `output/`.
+The figures of the paper are written to `../../PAPER/figures` when that folder exists (as in the
+authors' project), and to `output/` otherwise.
 The `.RData` files contain, besides the metrics of the tables, the posterior summaries of each
 dataset (means, standard deviations, HPD intervals and quantiles at each test point or for each
 coefficient, with the true values), so that the summary scripts can be modified without

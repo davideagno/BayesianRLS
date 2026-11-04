@@ -69,16 +69,13 @@ beta_ps_n <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, 
 lab_distr <- c("fit" = "Skew Student-t", "gauss" = "Gaussian", "true" = "True")
 lty <- c("fit" = "solid", "gauss" = "dashed", "true" = "dotdash")
 cols <- c("fit" = "#fc7d0b", "gauss" = "#1170aa", "true" = "#a3acb9")
-theme_ill <- theme_light() +
+theme_ill <- theme_light(base_size = 9) +
   theme(legend.text.align = 0,
-        strip.text = element_text(size = 11, colour = "black"),
+        strip.text = element_text(colour = "black"),
         strip.background = element_rect(fill = "gray82"),
         panel.grid.major = element_line(linewidth = 0.3, colour = "gray93"),
         panel.grid.minor = element_line(linewidth = 0.15, colour = "gray93"),
         axis.text.y = element_blank(),
-        axis.text.x = element_text(size = 7),
-        axis.title = element_text(size = 10),
-        legend.title = element_text(size = 10),
         plot.title = element_text(hjust = 0.5),
         legend.position = "top")
 
@@ -118,5 +115,8 @@ pl <- ggplot(df_d1, aes(x = beta, colour = distr, linetype = distr)) +
   theme_ill
 
 pl_tot <- ggpubr::ggarrange(pl_p, pl)
-dir.create("output", showWarnings = FALSE)
-ggsave(file.path("output", "pl_ill_skewt.pdf"), plot = pl_tot, width = 9, height = 5)
+# Paper figures are written directly to PAPER/figures when the script is run within the
+# paper project, and to output/ otherwise
+fig_dir <- if (dir.exists("../../PAPER/figures")) "../../PAPER/figures" else "output"
+dir.create(fig_dir, showWarnings = FALSE)
+ggsave(file.path(fig_dir, "pl_ill_skewt.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)

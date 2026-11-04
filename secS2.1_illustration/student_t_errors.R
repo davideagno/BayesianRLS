@@ -74,16 +74,13 @@ pl <- ggplot(df_d1) +
                        labels = c("rls" = "Student-t", 
                                   "blm" = "Gaussian")) +
   xlab("Beta") + ylab("Density") + xlim(c(-1, 0.5)) +
-  theme_light() +
+  theme_light(base_size = 9) +
   theme(legend.text.align = 0,
-        strip.text = element_text(size = 11, colour = "black"),
+        strip.text = element_text(colour = "black"),
         strip.background = element_rect(fill = "gray82"),
-        panel.grid.major = element_line(size = 0.3, colour = "gray93"),
-        panel.grid.minor = element_line(size = 0.15, colour = "gray93"),
+        panel.grid.major = element_line(linewidth = 0.3, colour = "gray93"),
+        panel.grid.minor = element_line(linewidth = 0.15, colour = "gray93"),
         axis.text.y = element_blank(),
-        axis.text.x = element_text(size = 7),
-        axis.title = element_text(size = 10),
-        legend.title = element_text(size = 10),
         plot.title = element_text(hjust = 0.5),
         legend.position = "top")
 pl
@@ -107,22 +104,22 @@ pl_p <- ggplot(df_plot, aes(x = y, y = dens, colour = distr, linetype = distr)) 
   scale_linetype_manual(name = "", labels = lab_distr,
                         values = c("rls_t" = "solid", "rls_n" = "dashed", "true" = "dotdash")) +
   labs(x = "Y", y = "Density") +
-  theme_light() +
+  theme_light(base_size = 9) +
   theme(legend.text.align = 0,
-        strip.text = element_text(size = 11, colour = "black"),
+        strip.text = element_text(colour = "black"),
         strip.background = element_rect(fill = "gray82"),
-        panel.grid.major = element_line(size = 0.3, colour = "gray93"),
-        panel.grid.minor = element_line(size = 0.15, colour = "gray93"),
+        panel.grid.major = element_line(linewidth = 0.3, colour = "gray93"),
+        panel.grid.minor = element_line(linewidth = 0.15, colour = "gray93"),
         axis.text.y = element_blank(),
-        axis.text.x = element_text(size = 7),
-        axis.title = element_text(size = 10),
-        legend.title = element_text(size = 10),
         plot.title = element_text(hjust = 0.5),
         legend.position = "top")
 pl_p
 
 pl_tot <- ggpubr::ggarrange(pl_p, pl)
 pl_tot
-dir.create("output", showWarnings = FALSE)
-ggsave(file.path("output", "pl_ill.pdf"), plot = pl_tot, width = 9, height = 5)
+# Paper figures are written directly to PAPER/figures when the script is run within the
+# paper project, and to output/ otherwise
+fig_dir <- if (dir.exists("../../PAPER/figures")) "../../PAPER/figures" else "output"
+dir.create(fig_dir, showWarnings = FALSE)
+ggsave(file.path(fig_dir, "pl_ill.pdf"), plot = pl_tot, width = 6.3, height = 3.5, device = cairo_pdf)
 

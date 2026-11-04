@@ -27,10 +27,13 @@ library(ggthemes)
 
 out_dir <- "output"
 dir.create(out_dir, showWarnings = FALSE)
+# Paper figures are written directly to PAPER/figures when the script is run within the
+# paper project, and to output/ otherwise
+fig_dir <- if (dir.exists("../../PAPER/figures")) "../../PAPER/figures" else "output"
 
-theme_appl <- theme_light() +
+theme_appl <- theme_light(base_size = 9) +
   theme(
-    strip.text = element_text(size = 11, colour = "black"),
+    strip.text = element_text(colour = "black"),
     strip.background = element_rect(fill = "gray82"),
     panel.grid.major = element_line(linewidth = 0.3, colour = "gray93"),
     panel.grid.minor = element_line(linewidth = 0.15, colour = "gray93")
@@ -433,9 +436,6 @@ pl_d <- ggplot(df_d) +
   theme(
     legend.text.align = 0,
     axis.text.y = element_blank(),
-    axis.text.x = element_text(size = 7),
-    axis.title = element_text(size = 10),
-    legend.title = element_text(size = 10),
     plot.title = element_text(hjust = 0.5),
     legend.position = "top"
   )
@@ -492,21 +492,16 @@ pl_conv <- ggplot(df_conv) +
   theme_appl +
   theme(
     legend.text.align = 0,
-    strip.text = element_text(size = 12, colour = "black"),
-    axis.text.y = element_text(size = 8),
-    axis.text.x = element_text(size = 8),
-    axis.title = element_text(size = 12),
     legend.title = element_blank(),
-    legend.text = element_text(size = 12),
     plot.title = element_text(hjust = 0.5),
     legend.position = "top"
   )
 
-ggsave(file.path(out_dir, "trace_plot.pdf"), pl_trace, width = 10, height = 3.5)
-ggsave(file.path(out_dir, "pl_rls.pdf"), pl_rls, width = 10, height = 6.5)
-ggsave(file.path(out_dir, "pl_d.pdf"), pl_d, width = 10, height = 6.5)
-ggsave(file.path(out_dir, "pl_blm.pdf"), pl_blm, width = 10, height = 6.5)
-ggsave(file.path(out_dir, "pl_mgcv.pdf"), pl_gam, width = 10, height = 6.5)
-ggsave(file.path(out_dir, "pl_appl_conv.png"), pl_conv, width = 10, height = 7)
-ggsave(file.path(out_dir, "pl_appl_var.pdf"), pl_var, width = 10, height = 7)
-ggsave(file.path(out_dir, "pl_appl_qq.pdf"), pl_qq, width = 10, height = 7)
+ggsave(file.path(fig_dir, "trace_plot.pdf"), pl_trace, width = 6.3, height = 2.4, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_rls.pdf"), pl_rls, width = 6.3, height = 4.1, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_d.pdf"), pl_d, width = 6.3, height = 4.1, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_blm.pdf"), pl_blm, width = 6.3, height = 4.1, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_mgcv.pdf"), pl_gam, width = 6.3, height = 4.1, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_appl_conv.png"), pl_conv, width = 6.3, height = 4.4, dpi = 300)
+ggsave(file.path(fig_dir, "pl_appl_var.pdf"), pl_var, width = 6.3, height = 4.4, device = cairo_pdf)
+ggsave(file.path(fig_dir, "pl_appl_qq.pdf"), pl_qq, width = 6.3, height = 4.4, device = cairo_pdf)

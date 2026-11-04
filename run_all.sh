@@ -20,6 +20,7 @@ FOLDERS="$*"
 steps=(
   "secS2.1_illustration student_t_errors.R"
   "secS2.1_illustration skew_t_errors.R"
+  "secS2.1_illustration posteriors_figure.R"
   "sec5.2_additive_models 1_simulate_data.R 30"
   "sec5.2_additive_models 1_simulate_data.R 100"
   "sec5.2_additive_models 2_fit_rls_student_t.R 30"

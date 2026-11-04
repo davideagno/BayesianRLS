@@ -55,6 +55,11 @@ opt_n <- nlminb(start = 1, objective = function(x) npll_loo_lm_t_alt(c(log(1e5),
 (sigma_opt_n <- exp(opt_n$par))
 beta_ps_n <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7)
 
+# Draws of the 4th coefficient, for the figure of Section 5.2 (posteriors_figure.R)
+dir.create("output", showWarnings = FALSE)
+draws <- data.frame(fit = beta_ps[, 4], gauss = beta_ps_n[, 4])
+save(draws, file = file.path("output", "draws_student_t.RData"))
+
 library(ggcorrplot)
 library(latex2exp)
 library(ggthemes)

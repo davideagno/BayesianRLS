@@ -65,6 +65,11 @@ sigma_opt_n <- exp(opt_n$par)
 cat("sigma =", sigma_opt_n, "\n")
 beta_ps_n <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7)
 
+# Draws of the 4th coefficient, for the figure of Section 5.2 (posteriors_figure.R)
+dir.create("output", showWarnings = FALSE)
+draws <- data.frame(fit = beta_ps[, 4], gauss = beta_ps_n[, 4])
+save(draws, file = file.path("output", "draws_skew_t.RData"))
+
 # Figure
 lab_distr <- c("fit" = "Skew Student-t", "gauss" = "Gaussian", "true" = "True")
 lty <- c("fit" = "solid", "gauss" = "dashed", "true" = "dotdash")

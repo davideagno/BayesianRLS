@@ -1,5 +1,4 @@
-# Section 5.2 (Figure 1) and Section S2.1 of the supplement: illustration with
-# Student-t errors.
+# Section 5.2 (Figure 1): illustration with Student-t errors.
 
 rm(list = ls())
 

@@ -1,5 +1,5 @@
 # Summaries for Table 1 (output of simulate.R). For Table S1, load instead the
-# output of ../secS2.2_uq_student_t/simulate.R (second argument "t").
+# output of ../secS2.1_uq_student_t/simulate.R (second argument "t").
 #
 # For each choice of sigma_n, the three entries of each line refer to predictive
 # resampling with Algorithm 1 (PS-1), Algorithm 2 (PS-2), and the exact posterior
@@ -15,7 +15,7 @@ p <- 50
 n_mult <- if (length(commandArgs(TRUE)) > 0) as.numeric(commandArgs(TRUE)[1]) else 3  # n = n_mult * p
 n_obs <- n_mult*p
 model <- if (length(commandArgs(TRUE)) > 1) commandArgs(TRUE)[2] else "norm"  # "norm" or "t"
-dir_load <- if (model == "t") "../secS2.2_uq_student_t/output" else "output"
+dir_load <- if (model == "t") "../secS2.1_uq_student_t/output" else "output"
 name_load <- file.path(dir_load, paste0("sim_th_p", p, "_n", n_obs, "_", model, ".RData"))
 sink(file.path(dir_load, paste0("summary_", model, "_n", n_mult, "p.txt")), split = TRUE)
 load(name_load)

@@ -1,4 +1,4 @@
-# Section S2.3 of the supplement: comparison with frequentist additive models
+# Section S2.2 of the supplement: comparison with frequentist additive models
 # (Table S2). Uses the datasets simulated by ../sec5.3_additive_models/1_simulate_data.R.
 
 rm(list = ls())

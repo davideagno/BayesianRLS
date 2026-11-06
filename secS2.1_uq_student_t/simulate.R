@@ -1,4 +1,4 @@
-# Section S2.2 of the supplement: uncertainty quantification with Student-t
+# Section S2.1 of the supplement: uncertainty quantification with Student-t
 # responses (Table S1). Run from this folder, with n_obs = 3*p or 10*p; summaries
 # with ../sec5.1_uq_gaussian/summarize_tables.R.
 

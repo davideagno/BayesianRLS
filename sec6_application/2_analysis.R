@@ -198,7 +198,7 @@ c_ps <- ps_rs_conv_t_1_alt(X_splines, bb$beta, bb$P, 4e5, 1, df_opt, sigma_opt)
 t_ps <- system.time(beta_ps <- ps_rs_parallel_t_fixed_alt(
   X_splines, bb$beta, bb$P,
   N = 9 * NROW(X_splines), B = 10000, df = df_opt, sigma = sigma_opt, seed = 1, nthreads = 7,
-  correct = TRUE   # N = 10 n, with the optional correction of Algorithm 2
+  correct = TRUE   # N = 10 n, with the Gaussian correction of Algorithm 2
 ))
 beta_ps <- as.mcmc(beta_ps)
 

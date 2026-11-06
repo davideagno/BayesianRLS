@@ -21,7 +21,7 @@ sigma_true <- 2
 nSim <- 30
 
 B_ps <- 10000
-N_ps <- 9 * n_obs   # N = 10 n, with the optional correction of Algorithms 1 and 2
+N_ps <- 9 * n_obs   # N = 10 n, with the Gaussian correction of Algorithms 1 and 2
 
 # beta_true, covariates and responses
 set.seed(1997); beta_true <- rnorm(p, sd = 2)

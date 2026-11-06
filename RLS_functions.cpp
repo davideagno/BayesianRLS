@@ -200,7 +200,7 @@ struct RNG {
 };
 
 // ---------------------------------------------------------------------------
-//  Optional correction of predictive resampling (Algorithms 1 and 2): the
+//  Gaussian correction of predictive resampling (Algorithms 1 and 2): the
 //  omitted remainder sum_{i>N} w_i xi_i is replaced by an independent
 //  N(0, var * V_N) draw, where var = Var(xi) * sigma^2 (Section S5 of the
 //  supplement). correction_factor() returns L with L L' = var * V_N (Cholesky,
@@ -1298,7 +1298,7 @@ NumericMatrix ps_rs_parallel_t_fixed_alt(NumericMatrix X_, NumericVector beta_,
     for (std::thread &th : pool) th.join();
   }
   
-  // --- 4. optional correction (Algorithm 2), with V_N = P after the N steps
+  // --- 4. Gaussian correction (Algorithm 2), with V_N = P after the N steps
   if (correct) {
     if (!(df > 2.0)) stop("the correction requires df > 2.");
     const arma::mat L_corr = correction_factor(P, sigma * sigma * t_var(df));

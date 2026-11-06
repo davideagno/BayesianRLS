@@ -411,3 +411,73 @@ summarize_draws <- function(draws, prob = 0.95) {
         q025 = q_type7((1 - prob) / 2),
         q975 = q_type7(1 - (1 - prob) / 2))
 }
+
+
+# Maximizes the LOO-PLL of npll_loo_alt() with nlminb(), using the analytic gradient of
+# npll_loo_alt_grad(). X'X and X'y depend only on the data, so they are computed once
+# here, for the dataset at hand. If fixed_df is given, df is not optimized and start is
+# c(log(sigma), log(lambda)). The first n_par columns of X are unpenalized.
+optimize_loo_pll <- function(start, y, X, beta_0, Omega, fixed_df = 0, n_par = 1) {
+  XtX <- crossprod(X)
+  Xty <- c(crossprod(X, y))
+  last_par <- NULL
+  last <- NULL
+  value_grad <- function(par) {
+    if (!identical(par, last_par)) {
+      last <<- npll_loo_alt_grad(par, y, X, XtX, Xty, beta_0, Omega, fixed_df, n_par)
+      last_par <<- par
+    }
+    last
+  }
+  nlminb(start = start,
+         objective = function(par) value_grad(par)$value,
+         gradient = function(par) c(value_grad(par)$gradient))
+}
+
+
+# ---------------------------------------------------------------------------
+# Simple interface for the linear model (see the tutorial in README.md)
+# ---------------------------------------------------------------------------
+
+# Posterior mean by recursive least squares, started from beta_0 and V_0.
+# Returns the posterior mean beta (beta_n in the paper) and the matrix V (V_n).
+rls_fit <- function(y, X, beta_0 = rep(0, ncol(X)), V_0 = diag(1000, ncol(X))) {
+  out <- rls(y, X, beta_0, V_0)
+  beta <- c(out$beta)
+  names(beta) <- colnames(X)
+  list(beta = beta, V = out$P, y = y, X = X, beta_0 = beta_0, V_0 = V_0)
+}
+
+# Predictive distribution selected by maximizing the leave-one-out prequential
+# log-likelihood (LOO-PLL): a location-scale Student-t with degrees of freedom nu
+# and scale phi, or a Gaussian (nu = Inf) with standard deviation phi.
+rls_predictive <- function(fit, family = c("student_t", "gaussian")) {
+  family <- match.arg(family)
+  if (family == "student_t") {
+    opt <- nlminb(start = c(log(5), log(sd(fit$y))), objective = npll_loo_lm_t_alt,
+                  y = fit$y, X = fit$X, beta_0 = fit$beta_0, V_0 = fit$V_0)
+    nu <- exp(opt$par[1])
+    phi <- exp(opt$par[2])
+  } else {
+    # dt_log_2() uses the Gaussian density for df >= 1e8
+    opt <- nlminb(start = log(sd(fit$y)), objective = function(x)
+      npll_loo_lm_t_alt(c(log(1e8), x), fit$y, fit$X, fit$beta_0, fit$V_0))
+    nu <- Inf
+    phi <- exp(opt$par)
+  }
+  list(family = family, nu = nu, phi = phi, loo_pll = -opt$objective)
+}
+
+# Independent draws from the martingale posterior by predictive resampling
+# (Algorithm 2 of the paper), with n_future future covariates resampled from the
+# observed ones. The omitted part of the series, about a fraction n / (n + n_future)
+# of the posterior variance, is added back by the Gaussian correction of
+# Algorithm 2. The random numbers follow set.seed().
+rls_posterior <- function(fit, pred, B = 10000, n_future = 9 * nrow(fit$X)) {
+  X_future <- fit$X[sample(nrow(fit$X), n_future, replace = TRUE), , drop = FALSE]
+  draws <- ps_lm_fixed_par_t_alt(fit$beta, fit$V, X_future, B = B, sigma = pred$phi,
+                                 df = pred$nu, seed = sample.int(.Machine$integer.max, 1),
+                                 correct = TRUE)
+  colnames(draws) <- colnames(fit$X)
+  draws
+}

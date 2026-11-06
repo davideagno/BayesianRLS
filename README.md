@@ -5,6 +5,96 @@ Code to reproduce the results contained in the paper:
 Agnoletto, D, Rigon, T, and Dunson, D. B. (2026+) **Martingale posteriors for flexible regression via
 recursive least squares**, arXiv.
 
+## Tutorial: Bayesian linear regression with heavy-tailed errors
+
+The method takes three function calls. They only need the packages `Rcpp` and
+`RcppArmadillo`. We use the `airquality` data of base R: daily ozone in New York, whose
+regression residuals are skewed and heavy-tailed.
+
+```r
+Rcpp::sourceCpp("RLS_functions.cpp")
+source("RLS_functions.R")
+
+aq <- na.omit(airquality)
+y <- aq$Ozone
+X <- cbind(intercept = 1, solar = aq$Solar.R, wind = aq$Wind, temp = aq$Temp)
+```
+
+**Step 1. Posterior mean.** Recursive least squares gives the posterior mean `fit$beta`, here
+essentially the least squares estimate, and the matrix `fit$V` (`V_n` in the paper). By default
+the recursion starts from `beta_0 = 0` and the vague `V_0 = 1000 I`.
+
+```r
+fit <- rls_fit(y, X)
+```
+
+**Step 2. Predictive distribution.** We use a Student-t predictive distribution, with degrees of
+freedom `nu` and scale `phi` selected by maximizing the leave-one-out prequential
+log-likelihood (LOO-PLL).
+
+```r
+pred <- rls_predictive(fit, family = "student_t")
+round(c(nu = pred$nu, phi = pred$phi), 2)
+#>    nu   phi
+#>  5.44 16.73
+```
+
+**Step 3. Posterior sampling.** Predictive resampling (Algorithm 2 of the paper) returns
+independent draws from the martingale posterior, in a fraction of a second. By default it uses
+`N = 10 n` and adds back the omitted part of the series through the Gaussian correction of
+Algorithm 2.
+
+```r
+set.seed(1)
+draws <- rls_posterior(fit, pred, B = 10000)
+
+round(t(apply(draws, 2, function(b) c(mean = mean(b), sd = sd(b), quantile(b, c(0.025, 0.975))))), 3)
+#>              mean     sd     2.5%   97.5%
+#> intercept -64.360 23.201 -109.570 -19.024
+#> solar       0.061  0.023    0.015   0.106
+#> wind       -3.336  0.653   -4.605  -2.047
+#> temp        1.651  0.255    1.152   2.149
+```
+
+**Using the posterior.** Any quantity is computed from the draws. For instance, for a hot,
+calm and sunny day, the posterior of the mean ozone and of its 90% predictive quantile:
+
+```r
+x_new <- c(1, 250, 5, 90)              # intercept, solar, wind, temp
+mean_new <- draws %*% x_new
+q90_new <- mean_new + pred$phi * qt(0.90, pred$nu)
+round(rbind(mean = quantile(mean_new, c(0.025, 0.5, 0.975)),
+            q90 = quantile(q90_new, c(0.025, 0.5, 0.975))), 1)
+#>      2.5%   50% 97.5%
+#> mean 75.5  82.7  90.0
+#> q90  99.9 107.1 114.4
+```
+
+**Independent draws.** Unlike Markov chain Monte Carlo, predictive resampling produces
+independent draws: there is no burn-in, no thinning and no convergence diagnostic to check. The
+trace plots show no trend or dependence, and the
+autocorrelations of the draws, at lags 1 to 5, are all of the order of `1 / sqrt(B) = 0.01`,
+their standard error for independent draws.
+
+```r
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for (j in colnames(draws)) plot(draws[, j], type = "l", main = j, xlab = "Draw", ylab = "")
+```
+
+![Trace plots of the posterior draws](tutorial/traceplot.png)
+
+```r
+round(sapply(colnames(draws), function(j) acf(draws[, j], lag.max = 5, plot = FALSE)$acf[-1]), 3)
+#>      intercept  solar   wind   temp
+#> [1,]     0.004 -0.002 -0.003  0.000
+#> [2,]    -0.018  0.012 -0.010 -0.013
+#> [3,]    -0.005 -0.021  0.000 -0.009
+#> [4,]     0.005 -0.009 -0.006  0.007
+#> [5,]     0.013 -0.005 -0.004  0.016
+```
+
+## Reproducing the paper
+
 The shared functions are in `RLS_functions.R` and `RLS_functions.cpp`. Each folder corresponds to a
 section of the paper or of the supplementary material. Its scripts are run from that folder, and
 write their results (`.RData` files, figures and summary tables) to the subfolder `output/`.

@@ -106,7 +106,7 @@ for (s in 1:nSim) {
   # Fit (sampling only)
   t_trad <- system.time(fit_trad <- update(fit_template, newdata = dat_splines, stanvars = stanvars,
                                            recompile = FALSE, chains = 5, cores = 5,
-                                           iter = 20000, warmup = 19000, seed = p*s))
+                                           iter = 2000, warmup = 1000, seed = p*s))
   post_samp <- coda::as.mcmc(as.matrix(fit_trad))
   beta_mcmc <- post_samp[,1:(9*p+1)]
   sigma_mcmc <- post_samp[,9*p+2]

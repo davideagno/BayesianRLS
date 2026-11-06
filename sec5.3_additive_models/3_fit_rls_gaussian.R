@@ -70,12 +70,8 @@ for (s in 1:nSim) {
   
   # Optimization - GAUSSIAN
   df_norm <- 10000
-  t_opt <- system.time(opt <- nlminb(start = c(log(1), rep(0.5, p)), 
-                                     objective = function(x) npll_loo_alt(c(log(df_norm), x),
-                                                                      y = dat$y, 
-                                                                      X = X_splines, 
-                                                                      beta_0 = b_0, 
-                                                                      Omega = Omega)))
+  t_opt <- system.time(opt <- optimize_loo_pll(c(log(1), rep(0.5, p)), dat$y, X_splines, b_0, Omega,
+                                               fixed_df = df_norm))
   sigma_opt <- exp(opt$par[1])
   lambda_opt <- exp(opt$par[-1])
   
@@ -85,8 +81,9 @@ for (s in 1:nSim) {
   t_est <- system.time(bb <- rls_lambda(dat$y, X_splines, b_0, lambda_opt, Omega))
   
   # Predictive resampling
-  t_ps <- system.time(beta_ps <- ps_rs_parallel_t_fixed_alt(X_splines, bb$beta, bb$P, N = 1e5, B = 5000, 
-                                                            df = df_norm, sigma = sigma_opt, seed = p*s, nthreads = ncores))
+  t_ps <- system.time(beta_ps <- ps_rs_parallel_t_fixed_alt(X_splines, bb$beta, bb$P, N = 9 * n_obs, B = 5000, 
+                                                            df = df_norm, sigma = sigma_opt, seed = p*s, nthreads = ncores,
+                                                            correct = TRUE))
   beta_ps <- as.mcmc(beta_ps)
   
   

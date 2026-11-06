@@ -24,7 +24,7 @@ df_true <- 5
 var_true <- (sigma_true^2)*(df_true / (df_true-2))
 
 B_ps <- 10000
-N_ps <- n_all - n_obs
+N_ps <- 9 * n_obs   # N = 10 n, with the optional correction of Algorithms 1 and 2
 
 # beta_true, covariates and responses
 set.seed(1997); beta_true <- rnorm(p, sd = 2)
@@ -73,6 +73,11 @@ for (s in 1:nSim) {
   # Sigma_n
   # Exact covariances under the covariate distribution used by predictive resampling
   cc <- Sigma_n_lm(bb$P, X_ps)
+  # Remainder beyond these 1e5 covariates added through sigma^2 V (Section S5 of the supplement)
+  cc$Sigma <- cc$Sigma + cc$V
+  # Predictive resampling uses only the first N - n of them
+  X_ps <- X_ps[1:N_ps, ]
+  V_N_ps <- Sigma_n_lm(bb$P, X_ps)$V
   lowtri <- c(lower.tri(cc$Sigma, diag = TRUE))
   in_ci_beta_Sn <- rep(0, p)
   width_ci_beta_Sn <- rep(NA, p)
@@ -108,14 +113,14 @@ for (s in 1:nSim) {
   fr_Vn_ex[s] <- sqrt(sum((c(cc$V_n)[lowtri] - c(cov(ex_Vn) / (var_true))[lowtri])^2))
   fr_Sn_ex[s] <- sqrt(sum((c(cc$Sigma)[lowtri] - c(cov(ex_Sn) / (var_true))[lowtri])^2))
   # Fraction of posterior variance omitted by stopping at N (Section 3.2), against n / N
-  frac_omit[s] <- mean(diag(cc$V) / diag(cc$V_n))
+  frac_omit[s] <- mean(diag(V_N_ps) / diag(cc$V_n))
   beta_n_all[,s] <- bb$beta
   V_n_all[,,s] <- cc$V_n
   Sigma_n_all[,,s] <- cc$Sigma
-  V_N_all[,,s] <- cc$V
+  V_N_all[,,s] <- V_N_ps
   
   # 1 := PS standard with \sigma_n^2 = \sigma^2
-  t_1 <- system.time(pp <- ps_lm_par_t(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7))
+  t_1 <- system.time(pp <- ps_lm_par_t(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7, correct = TRUE))
   time_1[s] <- t_1[3]
   mse_1[s] <- mean((bb$beta - colMeans(pp))^2)
   cov_1 <- cov(pp) / var_true
@@ -136,7 +141,7 @@ for (s in 1:nSim) {
   
   
   # 2 := PS fixed with \sigma_n^2 = \sigma^2
-  t_2 <- system.time(aa <- ps_lm_fixed_par_t(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7))
+  t_2 <- system.time(aa <- ps_lm_fixed_par_t(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7, correct = TRUE))
   time_2[s] <- t_2[3]
   mse_2[s] <- mean((bb$beta - colMeans(aa))^2)
   cov_2 <- cov(aa) / var_true
@@ -157,7 +162,7 @@ for (s in 1:nSim) {
   
   
   # A := PS standard with \sigma_n^2 = \sigma^2 / a_n
-  t_A <- system.time(vv <- ps_lm_par_t_alt(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7, keep_sigma = FALSE))
+  t_A <- system.time(vv <- ps_lm_par_t_alt(bb$beta, bb$P, X, N_ps, B_ps, sigma_true, df_true, nthreads = 7, keep_sigma = FALSE, correct = TRUE))
   time_A[s] <- t_A[3]
   mse_A[s] <- mean((bb$beta - colMeans(vv))^2)
   cov_A <- cov(vv) / var_true
@@ -178,7 +183,7 @@ for (s in 1:nSim) {
   
   
   # B := PS fixed with \sigma_n^2 = \sigma^2 / a_n
-  t_B <- system.time(ll <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7))
+  t_B <- system.time(ll <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_true, df_true, nthreads = 7, correct = TRUE))
   time_B[s] <- t_B[3]
   mse_B[s] <- mean((bb$beta - colMeans(ll))^2)
   cov_B <- cov(ll) / var_true

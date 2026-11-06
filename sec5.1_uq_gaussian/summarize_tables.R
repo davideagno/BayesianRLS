@@ -26,13 +26,13 @@ round(c(mean(log(mse_A)), mean(log(mse_B)), mean(log(mse_ex_Vn))), 2)
 round(c(mean(log(fr_Vn_A)), mean(log(fr_Vn_B)), mean(log(fr_Vn_ex))), 2)
 round(c(mean(width_A), mean(width_B), mean(width_Vn)), 3)
 round(c(mean(rowMeans(in_ci_A)), mean(rowMeans(in_ci_B)), mean(rowMeans(in_ci_Vn))), 3)
-round(c(mean(time_A), mean(time_B)), 1)
+round(c(mean(time_A), mean(time_B)), 2)
 
 round(c(sd(log(mse_A)), sd(log(mse_B)), sd(log(mse_ex_Vn))), 2)
 round(c(sd(log(fr_Vn_A)), sd(log(fr_Vn_B)), sd(log(fr_Vn_ex))), 2)
 round(c(sd(width_A), sd(width_B), sd(width_Vn)), 3)
 round(c(sd(colMeans(in_ci_A)), sd(colMeans(in_ci_B)), sd(colMeans(in_ci_Vn))), 3)
-round(c(sd(time_A), sd(time_B)), 1)
+round(c(sd(time_A), sd(time_B)), 2)
 
 
 # sigma_n = sigma
@@ -40,17 +40,17 @@ round(c(mean(log(mse_1)), mean(log(mse_2)), mean(log(mse_ex_Sn))), 2)
 round(c(mean(log(fr_Sn_1)), mean(log(fr_Sn_2)), mean(log(fr_Sn_ex))), 2)
 round(c(mean(width_1), mean(width_2), mean(width_Sn)), 3)
 round(c(mean(rowMeans(in_ci_1)), mean(rowMeans(in_ci_2)), mean(rowMeans(in_ci_Sn))), 3)
-round(c(mean(time_1), mean(time_2)), 1)
+round(c(mean(time_1), mean(time_2)), 2)
 
 round(c(sd(log(mse_1)), sd(log(mse_2)), sd(log(mse_ex_Sn))), 2)
 round(c(sd(log(fr_Sn_1)), sd(log(fr_Sn_2)), sd(log(fr_Sn_ex))), 2)
 round(c(sd(width_1), sd(width_2), sd(width_Sn)), 3)
 round(c(sd(colMeans(in_ci_1)), sd(colMeans(in_ci_2)), sd(colMeans(in_ci_Sn))), 3)
-round(c(sd(time_1), sd(time_2)), 1)
+round(c(sd(time_1), sd(time_2)), 2)
 
 
-# Fraction of posterior variance omitted by stopping at N (mean and range over datasets),
-# against n / N
-round(c(mean(frac_omit), range(frac_omit), n_obs / 1e5), 5)
+# Fraction of posterior variance omitted by stopping at N = 10 n, before the correction
+# (mean and range over datasets), close to n / N = 0.1
+round(c(mean(frac_omit), range(frac_omit)), 3)
 
 sink()

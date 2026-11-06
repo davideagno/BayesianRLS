@@ -88,8 +88,7 @@ for (s in 1:nSim) {
   
   
   # RLS approx
-  t_opt <- system.time(opt <- nlminb(start = c(log(2), log(1), rep(0.5, p)), objective = npll_loo_alt,
-                                     y = dat$y, X = X_splines, beta_0 = b_0, Omega = Omega))
+  t_opt <- system.time(opt <- optimize_loo_pll(c(log(2), log(1), rep(0.5, p)), dat$y, X_splines, b_0, Omega))
   df_opt <- exp(opt$par[1])
   sigma_opt <- exp(opt$par[2])
   lambda_opt <- exp(opt$par[-c(1:2)])

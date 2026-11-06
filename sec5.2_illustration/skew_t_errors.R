@@ -19,7 +19,7 @@ n_all <- 1e5
 sigma_true <- 0.2   # scale of the errors
 alpha_true <- 3     # skewness parameter
 nu_true <- 3        # degrees of freedom
-B_ps <- 5000
+B_ps <- 10000
 b_0 <- rep(0, p)
 V_0 <- diag(p) * 1000
 
@@ -43,7 +43,7 @@ y <- mu_true + sigma_true * eps
 
 # Fixed covariates for predictive resampling
 set.seed(5)
-X_ps <- X[sample.int(n_obs, NROW(X_new), replace = TRUE), ]
+X_ps <- X[sample.int(n_obs, 9 * n_obs, replace = TRUE), ]   # N = 10 n, with the correction
 
 # RLS
 bb <- rls(y, X, b_0, V_0)
@@ -57,14 +57,14 @@ alpha_opt <- opt$par[2]
 df_opt <- exp(opt$par[3]) + 1
 cat("sigma =", sigma_opt, " alpha =", alpha_opt, " nu =", df_opt, "\n")
 beta_ps <- ps_lm_fixed_par_st_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt, alpha_opt, df_opt,
-                                  nthreads = 7)
+                                  nthreads = 7, correct = TRUE)
 
 # Gaussian P_n (Student-t with df = 1e5, as in student_t_errors.R)
 cat("Selecting the scale of the Gaussian P_n by LOO-PLL\n")
 opt_n <- nlminb(start = 1, objective = function(x) npll_loo_lm_t_alt(c(log(1e5), x), y, X, b_0, V_0))
 sigma_opt_n <- exp(opt_n$par)
 cat("sigma =", sigma_opt_n, "\n")
-beta_ps_n <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7)
+beta_ps_n <- ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7, correct = TRUE)
 
 # Draws of the 4th coefficient, for the figure of Section 5.2 (posteriors_figure.R)
 dir.create("output", showWarnings = FALSE)

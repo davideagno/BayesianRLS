@@ -178,9 +178,8 @@ opt_skt <- nlminb(
 c(df = exp(opt_skt$par[1]), sigma = exp(opt_skt$par[2]), alpha = opt_skt$par[3])
 
 # Student-t P_n: hyperparameters selected by maximizing the LOO-PLL
-t_opt <- system.time(opt <- nlminb(
+t_opt <- system.time(opt <- optimize_loo_pll(
   start = c(log(5), log(1), rep(0.5, length(Omega))),
-  objective = npll_loo_alt_appl,
   y = y, X = X_splines, beta_0 = b_0, Omega = Omega, n_par = n_par
 ))
 df_opt <- exp(opt$par[1])
@@ -198,7 +197,8 @@ c_ps <- ps_rs_conv_t_1_alt(X_splines, bb$beta, bb$P, 4e5, 1, df_opt, sigma_opt)
 # Predictive resampling with fixed future covariates (Algorithm 2)
 t_ps <- system.time(beta_ps <- ps_rs_parallel_t_fixed_alt(
   X_splines, bb$beta, bb$P,
-  N = 3e5, B = 10000, df = df_opt, sigma = sigma_opt, seed = 1, nthreads = 7
+  N = 9 * NROW(X_splines), B = 10000, df = df_opt, sigma = sigma_opt, seed = 1, nthreads = 7,
+  correct = TRUE   # N = 10 n, with the optional correction of Algorithm 2
 ))
 beta_ps <- as.mcmc(beta_ps)
 
@@ -247,21 +247,31 @@ blm_stanvars <- function(a, b) {
               + 0.5 * rk[j] * log(lambda[j]) - rk[j] * log(sigma);
   }"), block = "model")
 }
+# The Stan model is compiled first, and only sampling is timed, as in Section 5.3. With the
+# default adapt_delta = 0.8 the sampler reports divergent transitions, also with longer
+# warm-ups; adapt_delta = 0.95 removes them
 fit_blm <- function(stanvars) {
-  brms::brm(
+  fit_0 <- brms::brm(
     formula = y ~ -1 + ., data = dat_splines, family = student(),
-    stanvars = stanvars, prior = prior("", class = "b"),
-    chains = 5, cores = 5, iter = 20000, warmup = 18000, seed = 1
+    stanvars = stanvars, prior = prior("", class = "b"), chains = 0
   )
+  t_fit <- system.time(fit <- update(fit_0, recompile = FALSE, chains = 5, cores = 5,
+                                     iter = 3000, warmup = 1000, seed = 1,
+                                     control = list(adapt_delta = 0.95)))
+  list(fit = fit, time = t_fit)
 }
 
 # Gamma(2, 0.5) prior, as in the simulation study of Section 5.3
-t_blm <- system.time(blm <- fit_blm(blm_stanvars(2, 0.5)))
+blm_out <- fit_blm(blm_stanvars(2, 0.5))
+blm <- blm_out$fit
+t_blm <- blm_out$time
 post_samp <- coda::as.mcmc(as.matrix(blm))
 ess_blm <- mean(coda::effectiveSize(post_samp[, 1:NCOL(X_splines)]))
 
 # Sensitivity to a vague Gamma(0.001, 0.001) prior on the smoothing parameters
-t_blm_vague <- system.time(blm_vague <- fit_blm(blm_stanvars(0.001, 0.001)))
+blm_vague_out <- fit_blm(blm_stanvars(0.001, 0.001))
+blm_vague <- blm_vague_out$fit
+t_blm_vague <- blm_vague_out$time
 post_vague <- coda::as.mcmc(as.matrix(blm_vague))
 ess_blm_vague <- mean(coda::effectiveSize(post_vague[, 1:NCOL(X_splines)]))
 
@@ -500,7 +510,7 @@ df_conv <- data.frame(
 pl_conv <- ggplot(df_conv) +
   facet_wrap(~title) +
   geom_line(aes(x = fs, y = conv, group = group), alpha = 0.7) +
-  labs(x = "Number of forward samples", y = expression(L[1] ~ "distance")) +
+  labs(x = "Number of forward samples", y = "Squared Euclidean distance") +
   ylim(c(0, max(c_ps))) +
   scale_x_continuous(labels = scales::label_comma()) +
   theme_appl +

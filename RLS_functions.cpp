@@ -1052,10 +1052,40 @@ struct RNG {
   }
 };
 
+// ---------------------------------------------------------------------------
+//  Optional correction of predictive resampling (Algorithms 1 and 2): the
+//  omitted remainder sum_{i>N} w_i xi_i is replaced by an independent
+//  N(0, var * V_N) draw, where var = Var(xi) * sigma^2 (Section S5 of the
+//  supplement). correction_factor() returns L with L L' = var * V_N (Cholesky,
+//  or eigenvalues clamped at zero if V_N is numerically singular); it calls no
+//  R API, so it can run in worker threads.
+// ---------------------------------------------------------------------------
+static arma::mat correction_factor(const arma::mat& V_N, const double var) {
+  const arma::mat S = var * 0.5 * (V_N + V_N.t());
+  arma::mat L;
+  if (arma::chol(L, S, "lower")) return L;
+  arma::vec ev; arma::mat U;
+  arma::eig_sym(ev, U, S);
+  return U * arma::diagmat(arma::sqrt(arma::clamp(ev, 0.0, arma::datum::inf)));
+}
+
+static inline void add_gaussian(arma::vec& beta, const arma::mat& L, RNG& rng) {
+  arma::vec z(L.n_cols);
+  for (arma::uword k = 0; k < L.n_cols; ++k) z[k] = rng.norm();
+  beta += L * z;
+}
+
+// Variance of a standard Student-t with df degrees of freedom (1 if Gaussian)
+static inline double t_var(const double df) {
+  return (std::isfinite(df) && df < 1e8) ? df / (df - 2.0) : 1.0;
+}
+
+
 // [[Rcpp::export]]
 NumericMatrix ps_lm_fixed_par(NumericVector beta_n_, NumericMatrix V_n_,
                               NumericMatrix X_future_, int B, double sigma,
-                              double seed = 1.0, int nthreads = 0) {
+                              double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N = X_future_.nrow();
   const arma::uword p = X_future_.ncol();
@@ -1089,6 +1119,8 @@ NumericMatrix ps_lm_fixed_par(NumericVector beta_n_, NumericMatrix V_n_,
   
   // Stored p x B (column per replicate) to avoid false sharing between
   // threads; transposed back at the end.
+  const double var_corr = sigma * sigma;
+  const arma::mat L_corr = correct ? correction_factor(V_N, var_corr) : arma::mat();
   arma::mat beta_out(p, B);
   
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
@@ -1100,6 +1132,7 @@ NumericMatrix ps_lm_fixed_par(NumericVector beta_n_, NumericMatrix V_n_,
       beta = beta_n;
       for (arma::uword i = 0; i < N; ++i)
         beta += (sigma * rng.norm()) * aVxT.col(i);
+      if (correct) add_gaussian(beta, L_corr, rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1136,7 +1169,8 @@ NumericMatrix ps_lm_fixed_par(NumericVector beta_n_, NumericMatrix V_n_,
 // [[Rcpp::export]]
 NumericMatrix ps_lm_fixed_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
                                   NumericMatrix X_future_, int B, double sigma,
-                                  double seed = 1.0, int nthreads = 0) {
+                                  double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N = X_future_.nrow();
   const arma::uword p = X_future_.ncol();
@@ -1181,6 +1215,8 @@ NumericMatrix ps_lm_fixed_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
   
   // Stored p x B (column per replicate) to avoid false sharing between
   // threads; transposed back at the end.
+  const double var_corr = sigma * sigma;
+  const arma::mat L_corr = correct ? correction_factor(V_N, var_corr) : arma::mat();
   arma::mat beta_out(p, B);
   
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
@@ -1192,6 +1228,7 @@ NumericMatrix ps_lm_fixed_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
       beta = beta_n;
       for (arma::uword i = 0; i < N; ++i)
         beta += rng.norm() * gT.col(i);                 // e_i = sigma_i * z_i
+      if (correct) add_gaussian(beta, L_corr, rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1233,7 +1270,8 @@ NumericMatrix ps_lm_fixed_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
 // [[Rcpp::export]]
 NumericMatrix ps_lm_par(NumericVector beta_n_, NumericMatrix V_n_,
                         NumericMatrix X_, int N, int B, double sigma,
-                        double seed = 1.0, int nthreads = 0) {
+                        double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N_obs = X_.nrow();
   const arma::uword p     = X_.ncol();
@@ -1259,6 +1297,7 @@ NumericMatrix ps_lm_par(NumericVector beta_n_, NumericMatrix V_n_,
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
   const uint64_t nobs = (uint64_t) N_obs;
   
+  const double var_corr = sigma * sigma;
   auto worker = [&](int lo, int hi) {
     arma::vec beta(p), Vx(p);
     arma::mat V_N(p, p);
@@ -1282,6 +1321,7 @@ NumericMatrix ps_lm_par(NumericVector beta_n_, NumericMatrix V_n_,
         beta += (a_i * e_i) * Vx;
         V_N  -= a_i * (Vx * Vx.t());
       }
+      if (correct) add_gaussian(beta, correction_factor(V_N, var_corr), rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1319,7 +1359,8 @@ NumericMatrix ps_lm_par(NumericVector beta_n_, NumericMatrix V_n_,
 NumericMatrix ps_lm_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
                             NumericMatrix X_, int N, int B, double sigma,
                             double seed = 1.0, int nthreads = 0,
-                            bool keep_sigma = true) {
+                            bool keep_sigma = true,
+                    bool correct = false) {
   
   const arma::uword N_obs = X_.nrow();
   const arma::uword p     = X_.ncol();
@@ -1359,6 +1400,7 @@ NumericMatrix ps_lm_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
   // each thread records a failure in its own slot, reported after join.
   std::vector<int> bad_b(nthr, 0), bad_i(nthr, 0);
   
+  const double var_corr = sigma * sigma;
   auto worker = [&](int t, int lo, int hi) {
     arma::vec beta(p), Vx(p);
     arma::mat V_N(p, p);
@@ -1388,6 +1430,7 @@ NumericMatrix ps_lm_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
         beta += (a_i * e_i) * Vx;
         V_N  -= a_i * (Vx * Vx.t());
       }
+      if (correct) add_gaussian(beta, correction_factor(V_N, var_corr), rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1513,7 +1556,8 @@ struct StudentT {
 // [[Rcpp::export]]
 NumericMatrix ps_lm_fixed_par_t(NumericVector beta_n_, NumericMatrix V_n_,
                                 NumericMatrix X_future_, int B, double sigma,
-                                double df, double seed = 1.0, int nthreads = 0) {
+                                double df, double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N = X_future_.nrow();
   const arma::uword p = X_future_.ncol();
@@ -1549,6 +1593,9 @@ NumericMatrix ps_lm_fixed_par_t(NumericVector beta_n_, NumericMatrix V_n_,
   
   // Stored p x B (column per replicate) to avoid false sharing between
   // threads; transposed back at the end.
+  if (correct && !(df > 2.0)) stop("the correction requires df > 2.");
+  const double var_corr = sigma * sigma * t_var(df);
+  const arma::mat L_corr = correct ? correction_factor(V_N, var_corr) : arma::mat();
   arma::mat beta_out(p, B);
   
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
@@ -1561,6 +1608,7 @@ NumericMatrix ps_lm_fixed_par_t(NumericVector beta_n_, NumericMatrix V_n_,
       beta = beta_n;
       for (arma::uword i = 0; i < N; ++i)
         beta += (sigma * tsamp.draw(rng)) * aVxT.col(i);
+      if (correct) add_gaussian(beta, L_corr, rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1597,7 +1645,8 @@ NumericMatrix ps_lm_fixed_par_t(NumericVector beta_n_, NumericMatrix V_n_,
 // [[Rcpp::export]]
 NumericMatrix ps_lm_fixed_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
                                     NumericMatrix X_future_, int B, double sigma,
-                                    double df, double seed = 1.0, int nthreads = 0) {
+                                    double df, double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N = X_future_.nrow();
   const arma::uword p = X_future_.ncol();
@@ -1643,6 +1692,9 @@ NumericMatrix ps_lm_fixed_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
   
   // Stored p x B (column per replicate) to avoid false sharing between
   // threads; transposed back at the end.
+  if (correct && !(df > 2.0)) stop("the correction requires df > 2.");
+  const double var_corr = sigma * sigma * t_var(df);
+  const arma::mat L_corr = correct ? correction_factor(V_N, var_corr) : arma::mat();
   arma::mat beta_out(p, B);
   
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
@@ -1655,6 +1707,7 @@ NumericMatrix ps_lm_fixed_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
       beta = beta_n;
       for (arma::uword i = 0; i < N; ++i)
         beta += tsamp.draw(rng) * gT.col(i);            // e_i = sigma_i * t_i
+      if (correct) add_gaussian(beta, L_corr, rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1783,7 +1836,8 @@ static void loo_core_lm(const vec& y, const mat& X, const vec& beta_0,
 // [[Rcpp::export]]
 NumericMatrix ps_lm_par_t(NumericVector beta_n_, NumericMatrix V_n_,
                           NumericMatrix X_, int N, int B, double sigma,
-                          double df, double seed = 1.0, int nthreads = 0) {
+                          double df, double seed = 1.0, int nthreads = 0,
+                    bool correct = false) {
   
   const arma::uword N_obs = X_.nrow();
   const arma::uword p     = X_.ncol();
@@ -1813,6 +1867,8 @@ NumericMatrix ps_lm_par_t(NumericVector beta_n_, NumericMatrix V_n_,
   
   const StudentT tsamp(df);            // df-dependent constants, built once
   
+  if (correct && !(df > 2.0)) stop("the correction requires df > 2.");
+  const double var_corr = sigma * sigma * t_var(df);
   auto worker = [&](int lo, int hi) {
     arma::vec beta(p), Vx(p);
     arma::mat V_N(p, p);
@@ -1836,6 +1892,7 @@ NumericMatrix ps_lm_par_t(NumericVector beta_n_, NumericMatrix V_n_,
         beta += (a_i * e_i) * Vx;
         V_N  -= a_i * (Vx * Vx.t());
       }
+      if (correct) add_gaussian(beta, correction_factor(V_N, var_corr), rng);
       beta_out.col(b) = beta;
     }
   };
@@ -1873,7 +1930,8 @@ NumericMatrix ps_lm_par_t(NumericVector beta_n_, NumericMatrix V_n_,
 NumericMatrix ps_lm_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
                               NumericMatrix X_, int N, int B, double sigma,
                               double df, double seed = 1.0, int nthreads = 0,
-                              bool keep_sigma = true) {
+                              bool keep_sigma = true,
+                    bool correct = false) {
   
   const arma::uword N_obs = X_.nrow();
   const arma::uword p     = X_.ncol();
@@ -1916,6 +1974,8 @@ NumericMatrix ps_lm_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
   // each thread records a failure in its own slot, reported after join.
   std::vector<int> bad_b(nthr, 0), bad_i(nthr, 0);
   
+  if (correct && !(df > 2.0)) stop("the correction requires df > 2.");
+  const double var_corr = sigma * sigma * t_var(df);
   auto worker = [&](int t, int lo, int hi) {
     arma::vec beta(p), Vx(p);
     arma::mat V_N(p, p);
@@ -1945,6 +2005,7 @@ NumericMatrix ps_lm_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
         beta += (a_i * e_i) * Vx;
         V_N  -= a_i * (Vx * Vx.t());
       }
+      if (correct) add_gaussian(beta, correction_factor(V_N, var_corr), rng);
       beta_out.col(b) = beta;
     }
   };
@@ -2349,7 +2410,8 @@ double npll_loo_alt(const arma::vec& log_par,
 NumericMatrix ps_rs_parallel_t_fixed_alt(NumericMatrix X_, NumericVector beta_,
                                          NumericMatrix P_, int N, int B,
                                          double df, double sigma,
-                                         double seed = 1.0, int nthreads = 0) {
+                                         double seed = 1.0, int nthreads = 0,
+                                         bool correct = false) {
   
   const arma::uword n = X_.nrow();
   const arma::uword p = X_.ncol();
@@ -2440,6 +2502,18 @@ NumericMatrix ps_rs_parallel_t_fixed_alt(NumericMatrix X_, NumericVector beta_,
       if (lo < hi) pool.emplace_back(worker, lo, hi);
     }
     for (std::thread &th : pool) th.join();
+  }
+  
+  // --- 4. optional correction (Algorithm 2), with V_N = P after the N steps
+  if (correct) {
+    if (!(df > 2.0)) stop("the correction requires df > 2.");
+    const arma::mat L_corr = correction_factor(P, sigma * sigma * t_var(df));
+    RNG rng(base + 0xD1B54A32D192ED03ULL);
+    for (int b = 0; b < B; ++b) {
+      arma::vec beta = beta_out.col(b);
+      add_gaussian(beta, L_corr, rng);
+      beta_out.col(b) = beta;
+    }
   }
   
   NumericMatrix out = wrap(arma::mat(beta_out.t()));
@@ -2925,7 +2999,8 @@ static inline double dst_log_std(const double z, const double alpha,
 NumericMatrix ps_lm_fixed_par_st_alt(NumericVector beta_n_, NumericMatrix V_n_,
                                      NumericMatrix X_future_, int B, double sigma,
                                      double alpha, double df, double seed = 1.0,
-                                     int nthreads = 0, bool centered = true) {
+                                     int nthreads = 0, bool centered = true,
+                    bool correct = false) {
   
   const arma::uword N = X_future_.nrow();
   const arma::uword p = X_future_.ncol();
@@ -2973,6 +3048,9 @@ NumericMatrix ps_lm_fixed_par_st_alt(NumericVector beta_n_, NumericMatrix V_n_,
     V_N = 0.5 * (V_N + V_t);
   }
   
+  if (correct && !(df > 2.0)) stop("the correction requires df > 2.");
+  const double var_corr = sigma * sigma * (t_var(df) - st_mean(st_d, df) * st_mean(st_d, df));
+  const arma::mat L_corr = correct ? correction_factor(V_N, var_corr) : arma::mat();
   arma::mat beta_out(p, B);
   const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
   
@@ -2989,6 +3067,7 @@ NumericMatrix ps_lm_fixed_par_st_alt(NumericVector beta_n_, NumericMatrix V_n_,
         : std::sqrt(tsamp.half_df / tsamp.gamma1(rng));
         beta += (sn * v - st_shift) * gT.col(i);        // e_i = sigma_i * s_i
       }
+      if (correct) add_gaussian(beta, L_corr, rng);
       beta_out.col(b) = beta;
     }
   };
@@ -3071,4 +3150,120 @@ double npll_loo_lm_st_alt(const arma::vec& par,
   
   if (!std::isfinite(out)) return BIG;
   return -out;
+}
+
+
+// ---------------------------------------------------------------------------
+//  LOO-PLL of npll_loo_alt() together with its analytic gradient.
+//
+//  Same objective as npll_loo_alt(), but
+//    - X'X and X'y are passed in, so that they are computed once per dataset
+//      (they do not depend on the hyperparameters);
+//    - the gradient with respect to log_par is returned as well, so that
+//      nlminb() needs no finite differences.
+//
+//  Notation: A = X'X + S, beta = A^{-1}(X'y + S beta_0), e = y - X beta,
+//  h_i = x_i' A^{-1} x_i, z_i = e_i / {sigma (1 - h_i)^{1/2}}, g = log dt(.; df),
+//      f = -sum_i [ g(z_i) - log sigma + 0.5 log(1 - h_i) ].
+//  With S_j = lambda_j Omega_j (block j), dA/dlog(lambda_j) = S_j, and
+//      dbeta = A^{-1} S_j (beta_0 - beta),   dh_i = -u_i' S_j u_i,  u_i = A^{-1} x_i,
+//  so that
+//      df/dlog(lambda_j) = m' S_j (beta_0 - beta) + tr{ S_j U diag(k) U' },
+//  with c_i = g'(z_i) / {sigma (1 - h_i)^{1/2}}, m = A^{-1} X' c,
+//  k_i = 0.5 {g'(z_i) z_i - 1} / (1 - h_i) and U = A^{-1} X'.
+//
+//    log_par : c(log(df), log(sigma), log(lambda_1), ..., log(lambda_q))
+//    fixed_df: if > 0, df is fixed to this value and log_par = c(log(sigma), log(lambda))
+//    n_par   : number of unpenalized leading columns of X (intercept and, in the
+//              application, the ethnicity indicators); the blocks of Omega follow
+// ---------------------------------------------------------------------------
+// [[Rcpp::export]]
+Rcpp::List npll_loo_alt_grad(const arma::vec& log_par,
+                             const arma::vec& y,
+                             const arma::mat& X,
+                             const arma::mat& XtX,
+                             const arma::vec& Xty,
+                             const arma::vec& beta_0,
+                             const Rcpp::List& Omega,
+                             const double fixed_df = 0.0,
+                             const int n_par = 1) {
+  
+  const uword n = y.n_elem;
+  const uword p = X.n_cols;
+  const uword q = (uword) Omega.size();
+  const bool  free_df = !(fixed_df > 0.0);
+  const uword off_par = free_df ? 1 : 0;     // position of log(sigma) in log_par
+  
+  if (log_par.n_elem != q + 1 + off_par)
+    Rcpp::stop("length(log_par) does not match length(Omega)");
+  
+  vec grad(log_par.n_elem, fill::zeros);
+  Rcpp::List bad = Rcpp::List::create(Rcpp::Named("value") = BIG,
+                                      Rcpp::Named("gradient") = grad);
+  if (!log_par.is_finite()) return bad;
+  
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
+  const double df     = free_df ? std::exp(log_par(0)) : fixed_df;
+  const double sigma  = std::exp(log_par(off_par));
+  const vec    lambda = exp(log_par.subvec(off_par + 1, log_par.n_elem - 1));
+  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)
+        || !lambda.is_finite() || lambda.min() <= 0.0) return bad;
+  
+  const std::vector<mat> Om = as_blocks(Omega);
+  check_design_appl(X, Om, n_par);
+  const mat S = build_S_appl(lambda, Om, p, (uword) n_par);
+  
+  mat A = XtX + S;
+  A = 0.5 * (A + A.t());
+  mat R;                                     // A = R'R, R upper triangular
+  if (!chol(R, A)) return bad;
+  
+  const vec beta = solve(trimatu(R), solve(trimatl(R.t()), Xty + S * beta_0),
+                         solve_opts::fast);
+  const mat W = solve(trimatl(R.t()), X.t(), solve_opts::fast);   // R^{-T} X'
+  const vec h = trans(sum(square(W), 0));
+  if (!h.is_finite() || h.max() >= 1.0 - 1e-12) return bad;
+  const vec e = y - X * beta;
+  
+  // Objective and the per-observation quantities for the gradient
+  const bool gauss = (df >= DF_GAUSS);
+  const double log_sigma = std::log(sigma);
+  double out = 0.0, d_log_sigma = 0.0, d_log_df = 0.0;
+  vec c(n), k(n);
+  const double dig = gauss ? 0.0 : 0.5 * (R::digamma(0.5 * (df + 1.0)) - R::digamma(0.5 * df));
+  for (uword i = 0; i < n; ++i) {
+    const double omh = 1.0 - h(i);
+    const double s_i = std::sqrt(omh);
+    const double z   = e(i) / (sigma * s_i);
+    out += dt_log_2(z, df) - log_sigma + 0.5 * std::log1p(-h(i));
+    const double gp = gauss ? -z : -(df + 1.0) * z / (df + z * z);   // g'(z)
+    c(i) = gp / (sigma * s_i);
+    k(i) = 0.5 * (gp * z - 1.0) / omh;
+    d_log_sigma += gp * z + 1.0;
+    if (!gauss)
+      d_log_df -= df * (dig - 0.5 / df - 0.5 * std::log1p(z * z / df)
+                          + 0.5 * (df + 1.0) * z * z / (df * (df + z * z)));
+  }
+  if (!std::isfinite(out)) return bad;
+  
+  // Gradient with respect to log(lambda_j)
+  const mat U = solve(trimatu(R), W, solve_opts::fast);               // A^{-1} X'
+  const vec m = U * c;
+  const vec delta = beta_0 - beta;
+  uword off = (uword) n_par;
+  for (uword j = 0; j < q; ++j) {
+    const uword kj = Om[j].n_rows;
+    const mat U_j = U.rows(off, off + kj - 1);
+    const mat M_j = U_j * (U_j.each_row() % k.t()).t();              // U_j diag(k) U_j'
+    grad(off_par + 1 + j) = lambda(j) * (dot(m.subvec(off, off + kj - 1),
+                                          Om[j] * delta.subvec(off, off + kj - 1))
+                                          + accu(Om[j] % M_j));
+    off += kj;
+  }
+  grad(off_par) = d_log_sigma;
+  if (free_df) grad(0) = d_log_df;
+  
+  return Rcpp::List::create(Rcpp::Named("value") = -out,
+                            Rcpp::Named("gradient") = grad);
 }

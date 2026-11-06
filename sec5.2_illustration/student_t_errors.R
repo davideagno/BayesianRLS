@@ -35,7 +35,7 @@ bb <- rls(y, X, b_0, V_0)
 
 # Fixed covariates for predictive resamplings
 set.seed(5)
-X_ps <- matrix(nrow = NROW(X_new), ncol = p)
+X_ps <- matrix(nrow = 9 * n_obs, ncol = p)   # N = 10 n, with the correction
 for (i in 1:NROW(X_ps)) {
   idx <- sample(1:n_obs, size = 1)
   X_ps[i,] <- X[idx,]
@@ -49,12 +49,12 @@ opt
 (sigma_opt <- exp(opt$par[2])) 
 var_opt <- sigma_opt^2 * df_opt / (df_opt - 2)
 B_ps <- 10000
-beta_ps <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt, df_opt, nthreads = 7)
+beta_ps <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt, df_opt, nthreads = 7, correct = TRUE)
 
 # Gaussian P_n
 opt_n <- nlminb(start = 1, objective = function(x) npll_loo_lm_t_alt(c(log(1e5), x), y, X, b_0, V_0))
 (sigma_opt_n <- exp(opt_n$par))
-beta_ps_n <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7)
+beta_ps_n <-  ps_lm_fixed_par_t_alt(bb$beta, bb$P, X_ps, B_ps, sigma_opt_n, 1e5, nthreads = 7, correct = TRUE)
 
 # Draws of the 4th coefficient, for the figure of Section 5.2 (posteriors_figure.R)
 dir.create("output", showWarnings = FALSE)

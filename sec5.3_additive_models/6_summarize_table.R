@@ -40,12 +40,14 @@ round(c(mean(time_est+time_opt), mean(time_opt_norm+time_est_norm), mean(time_tr
 round(c(mean(time_rls), mean(time_rls_norm), mean(time_trad[idx_trad]), mean(time_bart)), 2)
 
 
+# Standard deviations across datasets, as for MSE and time (per-dataset coverage and width
+# are the averages over the test points)
 round(c(sd(mse_rls), sd(mse_rls_norm), sd(mse_trad[idx_trad]), sd(mse_bart)), 3)
-round(c(sd(rowMeans(in_ci_rls)), sd(rowMeans(in_ci_rls_norm)), sd(rowMeans(in_ci_trad[,idx_trad])), sd(rowMeans(in_ci_bart))), 3)
-round(c(sd(rowMeans(width_ci_rls)), sd(rowMeans(width_ci_rls_norm)), sd(rowMeans(width_ci_trad[,idx_trad])), sd(rowMeans(width_ci_bart))), 3)
+round(c(sd(colMeans(in_ci_rls)), sd(colMeans(in_ci_rls_norm)), sd(colMeans(in_ci_trad[,idx_trad])), sd(colMeans(in_ci_bart))), 3)
+round(c(sd(colMeans(width_ci_rls)), sd(colMeans(width_ci_rls_norm)), sd(colMeans(width_ci_trad[,idx_trad])), sd(colMeans(width_ci_bart))), 3)
 round(c(sd(mse_rls_q), sd(mse_rls_q_norm), sd(mse_trad_q[idx_trad]), sd(mse_bart_q)), 3)
-round(c(sd(rowMeans(in_ci_rls_q)), sd(rowMeans(in_ci_rls_q_norm)), sd(rowMeans(in_ci_trad_q[,idx_trad])), sd(rowMeans(in_ci_bart_q))), 3)
-round(c(sd(rowMeans(width_rls_q)), sd(rowMeans(width_rls_q_norm)), sd(rowMeans(width_trad_q[,idx_trad])), sd(rowMeans(width_bart_q))), 3)
+round(c(sd(colMeans(in_ci_rls_q)), sd(colMeans(in_ci_rls_q_norm)), sd(colMeans(in_ci_trad_q[,idx_trad])), sd(colMeans(in_ci_bart_q))), 3)
+round(c(sd(colMeans(width_rls_q)), sd(colMeans(width_rls_q_norm)), sd(colMeans(width_trad_q[,idx_trad])), sd(colMeans(width_bart_q))), 3)
 round(c(sd(time_est+time_opt), sd(time_opt_norm+time_est_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 round(c(sd(time_rls), sd(time_rls_norm), sd(time_trad[idx_trad]), sd(time_bart)), 2)
 

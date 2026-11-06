@@ -2223,6 +2223,8 @@ double npll_loo(const arma::vec& log_par,
     Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
   if (!log_par.is_finite()) return BIG;
   
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
   const double df    = std::exp(log_par(0));
   const double sigma = std::exp(log_par(1));
   const vec    lambda = exp(log_par.subvec(2, log_par.n_elem - 1));
@@ -2312,6 +2314,8 @@ double npll_loo_alt(const arma::vec& log_par,
     Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
   if (!log_par.is_finite()) return BIG;
   
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
   const double df    = std::exp(log_par(0));
   const double sigma = std::exp(log_par(1));
   const vec    lambda = exp(log_par.subvec(2, log_par.n_elem - 1));
@@ -2518,6 +2522,8 @@ double npll_loo_lm_t_alt(const arma::vec& log_par,
   if (log_par.n_elem != 2) Rcpp::stop("log_par must be c(log(df), log(sigma))");
   if (!log_par.is_finite()) return BIG;
   
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
   const double df    = std::exp(log_par(0));
   const double sigma = std::exp(log_par(1));
   
@@ -2692,6 +2698,8 @@ double npll_loo_alt_appl(const arma::vec& log_par,
   
   if (!log_par.is_finite()) return BIG_APPL;
   
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
   const double df     = std::exp(log_par(0));
   const double sigma  = std::exp(log_par(1));
   const vec    lambda = (q > 0) ? vec(exp(log_par.subvec(2, log_par.n_elem - 1)))
@@ -2817,6 +2825,8 @@ double npll_loo_alt_appl_skt(const arma::vec& log_par,
   
   if (!log_par.is_finite()) return BIG_APPL;
   
+  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
+  // check that the selected df exceeds 2 (all values reported in the paper do).
   const double df     = std::exp(log_par(0));
   const double sigma  = std::exp(log_par(1));
   const double alpha  = log_par(2);

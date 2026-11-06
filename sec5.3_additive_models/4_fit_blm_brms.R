@@ -88,8 +88,9 @@ for (s in 1:nSim) {
     
     // beta ~ N(0, sigma^2 * S^{-1}),  S = blockdiag(lambda_j * Omega_j)
     // => precision per block is (lambda_j / sigma^2) * Omega_j
+    // b[1] is the intercept (first column of X_splines), so block j starts at (j - 1) * D + 2
     for (j in 1:P) {
-      vector[D] beta_j = b[((j - 1) * D + 1):(j * D)];
+      vector[D] beta_j = b[((j - 1) * D + 2):(j * D + 1)];
       target += -0.5 * (lambda[j] / square(sigma)) * quad_form_sym(Omega[j], beta_j)
                 + 0.5 * rk[j] * log(lambda[j]) - rk[j] * log(sigma);
     }",

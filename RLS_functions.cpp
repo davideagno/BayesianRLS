@@ -101,707 +101,6 @@ Rcpp::List rls_lambda(const arma::vec& y,
 }
 
 
-// [[Rcpp::export]]
-double pll_rls_t(const vec& y, const mat& X, vec beta, mat P, double sigma, double df) {
-  double out = 0.0;
-  const vec beta_0 = beta;
-  const mat P_0 = P;
-  const int n = y.n_elem;
-  for (int i = 0; i < n; i++) {
-    vec x_i = X.row(i).t();
-    double mu = sum(dot(x_i, beta));
-    out += R::dt((y(i) - mu) / sigma, df, 1) - std::log(sigma);
-    
-    vec Px = P * x_i;
-    double a = 1.0 / (1.0 + as_scalar(x_i.t() * Px));
-    beta += Px * (a * (y(i) - as_scalar(x_i.t() * beta)));
-    P -= a * (Px * Px.t());
-  }
-  return out;
-}
-
-
-static inline double dt_log(double z, double df) {
-  return R::lgammafn(0.5 * (df + 1.0))
-  - R::lgammafn(0.5 * df)
-  - 0.5 * std::log(df * M_PI)
-  - 0.5 * (df + 1.0) * std::log1p(z * z / df);
-}
-
-// [[Rcpp::export]]
-double pll_rls_t_lambda(double df,
-                        double sigma,
-                        const arma::vec& lambda,
-                        const arma::vec& y,
-                        const arma::mat& X,
-                        const arma::vec& beta_0,
-                        const Rcpp::List& Omega) {
-  const uword p_blocks = Omega.size();
-  if (lambda.n_elem != p_blocks) {
-    Rcpp::stop("length(lambda) must equal length(Omega)");
-  }
-  if (sigma <= 0.0) Rcpp::stop("sigma must be positive");
-  if (df    <= 0.0) Rcpp::stop("df must be positive");
-  
-  // Build P = blockdiag( 1e10,  (lambda_1 Omega_1 + eps I)^{-1},  ... )
-  mat P(X.n_cols, X.n_cols, fill::zeros);
-  P(0, 0) = 1e10;
-  
-  const double eps = 1e-10;
-  uword offset = 1;
-  for (uword j = 0; j < p_blocks; ++j) {
-    mat Oj = Rcpp::as<mat>(Omega[j]);
-    const uword k = Oj.n_rows;
-    if (Oj.n_cols != k) Rcpp::stop("Omega[[%d]] is not square", (int)j + 1);
-    
-    mat A = lambda(j) * Oj;
-    A.diag() += eps;
-    
-    // Symmetric positive-definite solve: Cholesky, then invert.
-    mat Ainv;
-    if (!inv_sympd(Ainv, A)) {
-      // Fall back to general inverse if sympd factorization fails.
-      Ainv = inv(A);
-    }
-    
-    P.submat(offset, offset, offset + k - 1, offset + k - 1) = Ainv;
-    offset += k;
-  }
-  if (offset != X.n_cols) {
-    Rcpp::stop("block sizes in Omega don't match ncol(X) - 1");
-  }
-  
-  vec beta = beta_0;
-  const uword n = y.n_elem;
-  const double log_sigma = std::log(sigma);
-  
-  double out = 0.0;
-  for (uword i = 0; i < n; ++i) {
-    vec x_i = X.row(i).t();
-    
-    const double mu  = dot(x_i, beta);
-    const double res = y(i) - mu;
-    
-    out += dt_log(res / sigma, df) - log_sigma;
-    
-    vec Px = P * x_i;
-    const double a = 1.0 / (1.0 + dot(x_i, Px));
-    beta += Px * (a * res);
-    P    -= a * (Px * Px.t());
-  }
-  return out;
-}
-
-
-
-// // ---------------------------------------------------------------------------
-// // dt_log(): log density of the standard (location 0, scale 1) Student-t.
-// // If dt_log is already defined in the same translation unit, delete this block
-// // or compile with -DDT_LOG_DEFINED.
-// // ---------------------------------------------------------------------------
-// #ifndef DT_LOG_DEFINED
-// inline double dt_log(double x, double df) {
-//   return R::lgammafn(0.5 * (df + 1.0)) - R::lgammafn(0.5 * df)
-//   - 0.5 * std::log(df * M_PI)
-//   - 0.5 * (df + 1.0) * std::log1p(x * x / df);
-// }
-// #endif
-
-namespace {
-
-// Build P = blockdiag( 1e10, (lambda_1 Omega_1 + eps I)^{-1}, ... ) once.
-// This depends only on (lambda, Omega), not on the permutation, so it is
-// computed a single time and copied for each permutation.
-mat build_P(const vec& lambda, const std::vector<mat>& Om, const uword p) {
-  
-  mat P(p, p, fill::zeros);
-  P(0, 0) = 1e10;
-  
-  const double eps = 1e-10;
-  uword offset = 1;
-  
-  for (uword j = 0; j < Om.size(); ++j) {
-    const mat& Oj = Om[j];
-    const uword k = Oj.n_rows;
-    
-    if (offset + k > p) Rcpp::stop("block sizes in Omega don't match ncol(X) - 1");
-    
-    mat A = lambda(j) * Oj;
-    A.diag() += eps;
-    
-    mat Ainv;
-    if (!inv_sympd(Ainv, A)) {
-      Ainv = inv(A);              // fall back to a general inverse
-    }
-    
-    P.submat(offset, offset, offset + k - 1, offset + k - 1) = Ainv;
-    offset += k;
-  }
-  
-  if (offset != p) Rcpp::stop("block sizes in Omega don't match ncol(X) - 1");
-  return P;
-}
-  
-  // Recursive-least-squares predictive log-likelihood over the rows listed in
-  // idx (0-based). Xt is the *transpose* of X, so Xt.col(r) is a contiguous
-  // column: this is much cache-friendlier than X.row(r) on a column-major matrix.
-  // beta and P are taken by value so each permutation starts from a fresh copy.
-  double pll_core(const double df,
-                  const double sigma,
-                  const vec&   y,
-                  const mat&   Xt,
-                  const uvec&  idx,
-                  vec          beta,
-                  mat          P) {
-    
-    const double log_sigma = std::log(sigma);
-    const uword  n = idx.n_elem;
-    const uword  p = Xt.n_rows;
-    
-    vec Px(p);
-    double out = 0.0;
-    
-    for (uword i = 0; i < n; ++i) {
-      const uword r = idx(i);
-      const subview_col<double> x_i = Xt.col(r);
-      
-      const double res = y(r) - dot(x_i, beta);
-      
-      out += dt_log(res / sigma, df) - log_sigma;
-      
-      Px = P * x_i;
-      const double a = 1.0 / (1.0 + dot(x_i, Px));
-      
-      beta += (a * res) * Px;
-      P    -= (a * Px) * Px.t();
-    }
-    
-    return out;
-  }
-  
-} // anonymous namespace
-
-
-
-// [[Rcpp::export]]
-vec ps_rs_single_iteration_t_1(const mat& X, vec beta, mat P,
-                               int N, double sigma, double df) {
-  const int n = X.n_rows;
-  for (int i = 0; i < N; i++) {
-    int idx = randi<int>(distr_param(0, n - 1));
-    vec x_new = X.row(idx).t();
-    double t_new = R::rt(df);
-    double y_new = as_scalar(x_new.t() * beta) + t_new * sigma;
-    vec Px = P * x_new;
-    double a = 1.0 / (1.0 + as_scalar(x_new.t() * Px));
-    beta += Px * (a * (y_new - as_scalar(x_new.t() * beta)));
-    P -= a * (Px * Px.t());
-  }
-  return beta;
-}
-
-
-//' P-splines Recursive Sampling
- //'
- //' @param X List of matrices (cubic splines regressors for each variable)
- //' @param beta List of vectors (one for each dimension)
- //' @param P List of matrices (one for each dimension)
- //' @param intercept Real number
- //' @param N Positive integer (length of forward samples)
- //' @param B Positive integer (sample size)
- //' @param sigma Positive number (standard deviation)
- //' @param seed Integer seed for random number generation
- //' @return List containing input parameters and beta_ps samples
- //' @export
- // [[Rcpp::export]]
- List ps_rs_cpp(List X, List beta, List P, double intercept, 
-                int N, int B, double sigma, int seed = 1) {
-   
-   // Set random seed
-   Rcpp::Environment base_env("package:base");
-   Rcpp::Function set_seed = base_env["set.seed"];
-   set_seed(seed);
-   
-   // Get dimensions
-   mat X0 = as<mat>(X[0]);
-   int n = X0.n_rows;
-   int p = beta.size();
-   
-   // Initialize beta_ps - list of matrices to store samples
-   List beta_ps(p);
-   for (int j = 0; j < p; j++) {
-     vec beta_j = as<vec>(beta[j]);
-     beta_ps[j] = mat(B, beta_j.n_elem);
-   }
-   
-   // Main sampling loop
-   for (int b = 0; b < B; b++) {
-     Rcout << b + 1 << std::endl;
-     
-     // Initialize beta_b and P_b for this iteration
-     List beta_b = clone(beta);
-     List P_b = clone(P);
-     
-     // Forward sampling loop
-     for (int i = 0; i < N; i++) {
-       
-       // Sample new observation index
-       int idx_new = as<int>(sample(n, 1)) - 1; // Convert to 0-based indexing
-       
-       // Extract x_new for all dimensions
-       List x_new(p);
-       for (int j = 0; j < p; j++) {
-         mat X_j = as<mat>(X[j]);
-         x_new[j] = trans(X_j.row(idx_new));
-       }
-       
-       // Calculate mean for new observation
-       double mean_new = 0.0;
-       for (int j = 0; j < p; j++) {
-         vec x_j = as<vec>(x_new[j]);
-         vec beta_j = as<vec>(beta_b[j]);
-         mean_new += dot(x_j, beta_j);
-       }
-       
-       // Sample new y
-       double y_new = mean_new + R::rnorm(0.0, sigma);
-       
-       // Create shuffled indices for updating
-       IntegerVector idx_shuffle = sample(p, p, false);
-       
-       // Update coefficients in random order
-       for (int idx_j = 0; idx_j < p; idx_j++) {
-         int j = idx_shuffle[idx_j] - 1; // Convert to 0-based indexing
-         
-         // Calculate residual
-         double r_ij = y_new;
-         for (int idx_k = 0; idx_k < p; idx_k++) {
-           int k = idx_shuffle[idx_k] - 1;
-           if (k != j) {
-             vec x_k = as<vec>(x_new[k]);
-             vec beta_k = as<vec>(beta_b[k]);
-             r_ij -= dot(x_k, beta_k);
-           }
-         }
-         
-         // Get current values
-         vec x_ij = as<vec>(x_new[j]);
-         mat P_ij = as<mat>(P_b[j]);
-         vec beta_j = as<vec>(beta_b[j]);
-         
-         // Calculate update factor
-         double a_ij = 1.0 / (1.0 + as_scalar(trans(x_ij) * P_ij * x_ij));
-         
-         // Calculate old prediction
-         double old_f = dot(x_ij, beta_j);
-         
-         // Update beta
-         beta_j = beta_j + a_ij * P_ij * x_ij * (r_ij - old_f);
-         beta_b[j] = beta_j;
-         
-         // Update P
-         P_ij = P_ij - a_ij * P_ij * x_ij * trans(x_ij) * P_ij;
-         P_b[j] = P_ij;
-       }
-     }
-     
-     // Store results for this iteration
-     for (int j = 0; j < p; j++) {
-       vec beta_j = as<vec>(beta_b[j]);
-       mat beta_ps_j = as<mat>(beta_ps[j]);
-       beta_ps_j.row(b) = trans(beta_j);
-       beta_ps[j] = beta_ps_j;
-     }
-   }
-   
-   // Return results
-   return List::create(
-     Named("X") = X,
-     Named("beta") = beta,
-     Named("P") = P,
-     Named("intercept") = intercept,
-     Named("B") = B,
-     Named("N") = N,
-     Named("sigma") = sigma,
-     Named("seed") = seed,
-     Named("beta_ps") = beta_ps
-   );
- }
-
-
-// [[Rcpp::export]]
-List ps_rs_single_iteration(List X, List beta, List P, 
-                            int N, double sigma, int seed) {
-  
-  // Get dimensions
-  mat X0 = as<mat>(X[0]);
-  int n = X0.n_rows;
-  int p = beta.size();
-  
-  // Convert Lists to vectors of matrices for easier access
-  std::vector<mat> X_vec(p);
-  std::vector<vec> beta_b(p);
-  std::vector<mat> P_b(p);
-  
-  for (int j = 0; j < p; j++) {
-    X_vec[j] = as<mat>(X[j]);
-    beta_b[j] = as<vec>(beta[j]);
-    P_b[j] = as<mat>(P[j]);
-  }
-  
-  // Set seed for this iteration
-  arma::arma_rng::set_seed(seed);
-  
-  // Forward sampling loop
-  for (int i = 0; i < N; i++) {
-    
-    // Sample new observation index
-    int idx_new = arma::randi<int>(arma::distr_param(0, n - 1));
-    
-    // Extract x_new for all dimensions
-    std::vector<vec> x_new(p);
-    for (int j = 0; j < p; j++) {
-      x_new[j] = trans(X_vec[j].row(idx_new));
-    }
-    
-    // Calculate mean for new observation
-    double mean_new = 0.0;
-    for (int j = 0; j < p; j++) {
-      mean_new += dot(x_new[j], beta_b[j]);
-    }
-    
-    // Sample new y
-    double y_new = mean_new + arma::randn() * sigma;
-    
-    // Create shuffled indices for updating
-    uvec idx_shuffle = arma::randperm(p);
-    
-    // Update coefficients in random order
-    for (int idx_j = 0; idx_j < p; idx_j++) {
-      int j = idx_shuffle(idx_j);
-      
-      // Calculate residual
-      double r_ij = y_new;
-      for (int idx_k = 0; idx_k < p; idx_k++) {
-        int k = idx_shuffle(idx_k);
-        if (k != j) {
-          r_ij -= dot(x_new[k], beta_b[k]);
-        }
-      }
-      
-      // Get current values
-      vec x_ij = x_new[j];
-      mat P_ij = P_b[j];
-      vec beta_j = beta_b[j];
-      
-      // Calculate update factor
-      double a_ij = 1.0 / (1.0 + as_scalar(trans(x_ij) * P_ij * x_ij));
-      
-      // Calculate old prediction
-      double old_f = dot(x_ij, beta_j);
-      
-      // Update beta
-      beta_b[j] = beta_j + a_ij * P_ij * x_ij * (r_ij - old_f);
-      
-      // Update P
-      P_b[j] = P_ij - a_ij * P_ij * x_ij * trans(x_ij) * P_ij;
-    }
-  }
-  
-  // Convert back to List format
-  List beta_result(p);
-  for (int j = 0; j < p; j++) {
-    beta_result[j] = beta_b[j];
-  }
-  
-  return beta_result;
-}
-
-
-
-
-// [[Rcpp::export]]
-List ps_rs_single_iteration_t(List X, List beta, List P, 
-                              int N, double sigma, double df, int seed) {
-  
-  // Get dimensions
-  mat X0 = as<mat>(X[0]);
-  int n = X0.n_rows;
-  int p = beta.size();
-  
-  // Convert Lists to vectors of matrices for easier access
-  std::vector<mat> X_vec(p);
-  std::vector<vec> beta_b(p);
-  std::vector<mat> P_b(p);
-  
-  for (int j = 0; j < p; j++) {
-    X_vec[j] = as<mat>(X[j]);
-    beta_b[j] = as<vec>(beta[j]);
-    P_b[j] = as<mat>(P[j]);
-  }
-  
-  // Set seed for this iteration
-  arma::arma_rng::set_seed(seed);
-  
-  // Forward sampling loop
-  for (int i = 0; i < N; i++) {
-    
-    // Sample new observation index
-    int idx_new = arma::randi<int>(arma::distr_param(0, n - 1));
-    
-    // Extract x_new for all dimensions
-    std::vector<vec> x_new(p);
-    for (int j = 0; j < p; j++) {
-      x_new[j] = trans(X_vec[j].row(idx_new));
-    }
-    
-    // Calculate mean for new observation
-    double mean_new = 0.0;
-    for (int j = 0; j < p; j++) {
-      mean_new += dot(x_new[j], beta_b[j]);
-    }
-    
-    // Sample new y from Student t distribution
-    // Generate standard t and scale by sigma
-    double t_sample = R::rt(df);
-    double y_new = mean_new + t_sample * sigma;
-    
-    // Create shuffled indices for updating
-    uvec idx_shuffle = arma::randperm(p);
-    
-    // Update coefficients in random order
-    for (int idx_j = 0; idx_j < p; idx_j++) {
-      int j = idx_shuffle(idx_j);
-      
-      // Calculate residual
-      double r_ij = y_new;
-      for (int idx_k = 0; idx_k < p; idx_k++) {
-        int k = idx_shuffle(idx_k);
-        if (k != j) {
-          r_ij -= dot(x_new[k], beta_b[k]);
-        }
-      }
-      
-      // Get current values
-      vec x_ij = x_new[j];
-      mat P_ij = P_b[j];
-      vec beta_j = beta_b[j];
-      
-      // Calculate update factor
-      double a_ij = 1.0 / (1.0 + as_scalar(trans(x_ij) * P_ij * x_ij));
-      
-      // Calculate old prediction
-      double old_f = dot(x_ij, beta_j);
-      
-      // Update beta
-      beta_b[j] = beta_j + a_ij * P_ij * x_ij * (r_ij - old_f);
-      
-      // Update P
-      P_b[j] = P_ij - a_ij * P_ij * x_ij * trans(x_ij) * P_ij;
-    }
-  }
-  
-  // Convert back to List format
-  List beta_result(p);
-  for (int j = 0; j < p; j++) {
-    beta_result[j] = beta_b[j];
-  }
-  
-  return beta_result;
-}
-
-
-// [[Rcpp::export]]
-Rcpp::List invert_lambda_Omega(const arma::vec& lambda,
-                               const Rcpp::List& Omega) {
-  const R_xlen_t p = Omega.size();
-  if (lambda.n_elem != static_cast<uword>(p)) {
-    Rcpp::stop("length(lambda) must equal length(Omega)");
-  }
-  
-  const double eps = 1e-10;
-  Rcpp::List P(p);
-  
-  for (R_xlen_t j = 0; j < p; ++j) {
-    mat Oj = Rcpp::as<mat>(Omega[j]);
-    if (Oj.n_rows != Oj.n_cols) {
-      Rcpp::stop("Omega[[%d]] is not square", (int)j + 1);
-    }
-    
-    mat A = lambda(j) * Oj;
-    A.diag() += eps;
-    
-    mat Ainv;
-    if (!inv_sympd(Ainv, A)) {
-      Ainv = inv(A);        // fallback if Cholesky-based inversion fails
-    }
-    
-    P[j] = Ainv;
-  }
-  
-  return P;
-}
-
-
-// [[Rcpp::export]]
-List est_rs_cpp(NumericVector y, List X, List beta_0, List P_0) {
-  const uword n = y.size();
-  const uword p = beta_0.size();
-  
-  // Center y
-  vec y_arma    = as<vec>(y);
-  double intercept = mean(y_arma);
-  vec y_centered   = y_arma - intercept;
-  
-  // Unpack lists into std::vector for fast indexing
-  std::vector<mat> X_vec(p), P(p);
-  std::vector<vec> beta(p);
-  for (uword j = 0; j < p; ++j) {
-    X_vec[j] = as<mat>(X[j]);
-    beta[j]  = as<vec>(beta_0[j]);
-    P[j]     = as<mat>(P_0[j]);
-  }
-  
-  // Main loop: single pass over observations
-  for (uword i = 0; i < n; ++i) {
-    // Full prediction at i using current betas
-    double f_hat = 0.0;
-    for (uword j = 0; j < p; ++j) {
-      f_hat += dot(X_vec[j].row(i), beta[j]);
-    }
-    
-    // Random permutation of component indices (via R's RNG for reproducibility)
-    IntegerVector perm = sample(p, p) - 1;
-    
-    for (uword idx_j = 0; idx_j < p; ++idx_j) {
-      const uword j = perm[idx_j];
-      const vec x_ij = X_vec[j].row(i).t();
-      
-      vec Px = P[j] * x_ij;
-      const double a     = 1.0 / (1.0 + dot(x_ij, Px));
-      const double resid = y_centered(i) - f_hat;
-      
-      const double f_j_old = dot(x_ij, beta[j]);
-      beta[j] += a * resid * Px;
-      P[j]    -= a * (Px * Px.t());
-      const double f_j_new = dot(x_ij, beta[j]);
-      
-      f_hat += (f_j_new - f_j_old);
-    }
-  }
-  
-  // Pack back into R lists
-  List beta_out(p), P_out(p);
-  for (uword j = 0; j < p; ++j) {
-    beta_out[j] = beta[j];
-    P_out[j]    = P[j];
-  }
-  
-  return List::create(
-    _["y"]         = NumericVector(y_centered.begin(), y_centered.end()),
-    _["X"]         = X,
-    _["beta_0"]    = beta_0,
-    _["P_0"]       = P_0,
-    _["beta"]      = beta_out,
-    _["P"]         = P_out,
-    _["intercept"] = intercept
-  );
-}
-
-
-// [[Rcpp::export]]
-double pll_rs_t_cpp(double df,
-                    double sigma,
-                    List X,
-                    NumericVector y,
-                    List beta_0,
-                    List P_0) {
-  
-  const int n = y.size();
-  const int p = beta_0.size();
-  
-  if (sigma <= 0.0) stop("sigma must be positive");
-  if (df    <= 0.0) stop("df must be positive");
-  if ((int)X.size() != p || (int)P_0.size() != p) {
-    stop("X, beta_0, and P_0 must all have length p");
-  }
-  
-  // Center y once
-  double intercept = 0.0;
-  for (int i = 0; i < n; ++i) intercept += y[i];
-  intercept /= n;
-  
-  vec y_centered(n);
-  for (int i = 0; i < n; ++i) y_centered(i) = y[i] - intercept;
-  
-  // Unpack lists
-  std::vector<mat> X_vec(p), P(p);
-  std::vector<vec> beta(p);
-  for (int j = 0; j < p; ++j) {
-    X_vec[j] = as<mat>(X[j]);
-    beta[j]  = as<vec>(beta_0[j]);
-    P[j]     = as<mat>(P_0[j]);
-  }
-  
-  const double log_sigma = std::log(sigma);
-  double pll = 0.0;
-  
-  for (int i = 0; i < n; ++i) {
-    
-    // Full prediction at i (no intercept: y is already centered)
-    double f_hat = 0.0;
-    for (int j = 0; j < p; ++j) {
-      f_hat += dot(X_vec[j].row(i), beta[j]);
-    }
-    
-    // Predictive Student-t log-density BEFORE the update
-    const double resid = y_centered(i) - f_hat;
-    pll += R::dt(resid / sigma, df, 1) - log_sigma;
-    
-    // Random permutation of components via R's RNG
-    // IntegerVector perm = sample(p, p) - 1;
-    uvec perm = arma::randperm(p);
-    
-    for (int idx_j = 0; idx_j < p; ++idx_j) {
-      const int j = perm[idx_j];
-      const vec x_ij = X_vec[j].row(i).t();
-      
-      vec Px = P[j] * x_ij;
-      const double a         = 1.0 / (1.0 + dot(x_ij, Px));
-      const double resid_now = y_centered(i) - f_hat;
-      
-      const double f_j_old = dot(x_ij, beta[j]);
-      beta[j] += a * resid_now * Px;
-      P[j]    -= a * (Px * Px.t());
-      const double f_j_new = dot(x_ij, beta[j]);
-      
-      // Keep running f_hat in sync with the just-updated beta[j]
-      f_hat += (f_j_new - f_j_old);
-    }
-  }
-  
-  return pll;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // [[Rcpp::export]]
@@ -849,158 +148,6 @@ List Sigma_n_lm(NumericMatrix V_n_, NumericMatrix X_future_) {
                       _["V"]     = V_out,
                       _["V_n"]   = V_n_);
 }
-
-
-
-
-// [[Rcpp::export]]
-NumericMatrix ps_lm_fixed(NumericVector beta_n_, NumericMatrix V_n_,
-                          NumericMatrix X_future_, int B, double sigma,
-                          double seed = 1.0) {
-  
-  const arma::uword N = X_future_.nrow();
-  const arma::uword p = X_future_.ncol();
-  
-  if ((arma::uword) beta_n_.size() != p)
-    stop("length(beta_n) must equal ncol(X_future).");
-  if ((arma::uword) V_n_.nrow() != p || (arma::uword) V_n_.ncol() != p)
-    stop("V_n must be p x p with p = ncol(X_future).");
-  if (B < 1)
-    stop("B must be >= 1.");
-  
-  // Read-only view: X_future is never modified.
-  const arma::mat X(X_future_.begin(), N, p, false);
-  
-  const arma::vec beta_n = as<arma::vec>(beta_n_);
-  arma::mat       V_N    = as<arma::mat>(V_n_);
-  
-  // --- gain sequence, computed once ---------------------------------
-  arma::mat aVx(N, p);
-  arma::vec Vx(p);
-  
-  for (arma::uword i = 0; i < N; ++i) {
-    const arma::rowvec x_i = X.row(i);
-    
-    Vx = V_N * x_i.t();
-    const double a_i = 1.0 / (1.0 + arma::dot(x_i, Vx));
-    
-    aVx.row(i) = a_i * Vx.t();
-    V_N -= a_i * (Vx * Vx.t());
-    
-    const arma::mat V_t = V_N.t();          // explicit temp: avoids aliasing
-    V_N = 0.5 * (V_N + V_t);
-  }
-  
-  // --- replicates ---------------------------------------------------
-  arma::mat beta_out(B, p);
-  arma::vec beta(p);
-  
-  Function set_seed = Environment::base_env()["set.seed"];
-  
-  for (int b = 1; b <= B; ++b) {
-    beta = beta_n;
-    set_seed(seed * b);
-    
-    for (arma::uword i = 0; i < N; ++i) {
-      const double mu  = arma::dot(X.row(i), beta);
-      const double y_i = R::rnorm(mu, sigma);
-      const double e_i = y_i - mu;
-      
-      beta += e_i * aVx.row(i).t();
-    }
-    beta_out.row(b - 1) = beta.t();
-  }
-  
-  NumericMatrix out = wrap(beta_out);
-  
-  SEXP dn = X_future_.attr("dimnames");
-  if (!Rf_isNull(dn)) {
-    List dnl(dn);
-    if (dnl.size() >= 2 && !Rf_isNull(dnl[1]))
-      out.attr("dimnames") = List::create(R_NilValue, dnl[1]);
-  }
-  
-  return out;
-}
-
-
-
-
-
-// [[Rcpp::export]]
-NumericMatrix ps_lm(NumericVector beta_n_, NumericMatrix V_n_,
-                    NumericMatrix X_, int N, int B, double sigma,
-                    double seed = 1.0) {
-  
-  const arma::uword N_obs = X_.nrow();
-  const arma::uword p     = X_.ncol();
-  
-  if ((arma::uword) beta_n_.size() != p)
-    stop("length(beta_n) must equal ncol(X).");
-  if ((arma::uword) V_n_.nrow() != p || (arma::uword) V_n_.ncol() != p)
-    stop("V_n must be p x p with p = ncol(X).");
-  if (N_obs < 1) stop("X must have at least one row.");
-  if (N < 0)     stop("N must be >= 0.");
-  if (B < 1)     stop("B must be >= 1.");
-  
-  // Read-only view: X is never modified.
-  const arma::mat X(X_.begin(), N_obs, p, false);
-  
-  const arma::vec beta_n = as<arma::vec>(beta_n_);
-  const arma::mat V_start = as<arma::mat>(V_n_);
-  
-  arma::mat beta_out(B, p);
-  
-  arma::vec beta(p);
-  arma::mat V_N(p, p);
-  arma::vec Vx(p);
-  std::vector<arma::uword> idx(N);
-  
-  Function set_seed = Environment::base_env()["set.seed"];
-  set_seed(seed);
-  
-  const double dn = (double) N_obs;
-  
-  for (int b = 0; b < B; ++b) {
-    beta = beta_n;
-    V_N  = V_start;
-    
-    // Whole index path drawn first, as sample.int() does, so that the
-    // uniform and normal draws are consumed in the same order as in R.
-    for (int i = 0; i < N; ++i)
-      idx[i] = (arma::uword) R_unif_index(dn);
-    
-    for (int i = 0; i < N; ++i) {
-      const arma::rowvec x_i = X.row(idx[i]);
-      
-      Vx = V_N * x_i.t();
-      const double a_i = 1.0 / (1.0 + arma::dot(x_i, Vx));
-      
-      const double mu  = arma::dot(x_i, beta);
-      const double y_i = R::rnorm(mu, sigma);
-      const double e_i = y_i - mu;
-      
-      beta += (a_i * e_i) * Vx;
-      V_N  -= a_i * (Vx * Vx.t());
-    }
-    beta_out.row(b) = beta.t();
-  }
-  
-  NumericMatrix out = wrap(beta_out);
-  
-  SEXP dnm = X_.attr("dimnames");
-  if (!Rf_isNull(dnm)) {
-    List dnl(dnm);
-    if (dnl.size() >= 2 && !Rf_isNull(dnl[1]))
-      out.attr("dimnames") = List::create(R_NilValue, dnl[1]);
-  }
-  
-  return out;
-}
-
-
-
-
 
 
 // ---- thread-local RNG: xoshiro256++ seeded via splitmix64 -----------
@@ -1266,7 +413,6 @@ NumericMatrix ps_lm_fixed_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
 }
 
 
-
 // [[Rcpp::export]]
 NumericMatrix ps_lm_par(NumericVector beta_n_, NumericMatrix V_n_,
                         NumericMatrix X_, int N, int B, double sigma,
@@ -1468,9 +614,6 @@ NumericMatrix ps_lm_par_alt(NumericVector beta_n_, NumericMatrix V_n_,
     
     return out;
 }
-
-
-
 
 
 // ---------------------------------------------------------------------------
@@ -1750,10 +893,6 @@ NumericMatrix ps_lm_fixed_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
 // invece di fermarsi.
 static const double BIG = 1e100;
 
-// eps della funzione originale: rls_lambda() usa (lambda_j*Omega_j + eps*I)
-// come precisione del blocco j e 1e10 come varianza dell'intercetta.
-static const double EPS_ORIG = 1e-10;
-
 // ---------------------------------------------------------------------------
 // log-densita' t di Student standard.
 // df >= DF_GAUSS viene trattato come limite normale: evita lgamma di argomenti
@@ -1805,12 +944,6 @@ static void loo_core_lm(const vec& y, const mat& X, const vec& beta_0,
   
   r_loo = (y - X * beta) / (1.0 - h);           // y_i - x_i' beta_{-i}
 }
-
-
-
-
-
-
 
 
 // ---------------------------------------------------------------------------
@@ -2045,141 +1178,6 @@ NumericMatrix ps_lm_par_t_alt(NumericVector beta_n_, NumericMatrix V_n_,
 }
 
 
-
-
-
-// ---------------------------------------------------------------------------
-// ps_rs_parallel_t_fixed
-//
-// Fully C++ version of ps_rs_parallel_t_1 / ps_rs_single_iteration_t_1,
-// written in the style of ps_lm_fixed_par_t.
-//
-// In the recursive update y_new - x_new' beta = sigma * t_new, so every step
-// reduces to   beta += sigma * t_new * (a * P x_new):   the gain a * P x
-// depends only on the sampled rows and on the P recursion, not on b nor on
-// beta.  Hence:
-//   1. the N rows of X are sampled ONCE (serial, own RNG stream);
-//   2. the gain sequence a_i * P_{i-1} x_i is computed ONCE (serial);
-//   3. the loop over b runs in parallel (std::thread) and only draws the t's.
-//
-// Put it in the same .cpp file as ps_lm_fixed_par_t, after RNG and StudentT
-// (same headers: RcppArmadillo, <thread>, <vector>, <cstdint>, <cmath>,
-// <algorithm>).
-//
-// Returns a B x p matrix (one row per replicate, colnames taken from X) with
-// attribute "idx" = 1-based indices of the N sampled rows of X.
-// ---------------------------------------------------------------------------
-
-// [[Rcpp::export]]
-NumericMatrix ps_rs_parallel_t_fixed(NumericMatrix X_, NumericVector beta_,
-                                     NumericMatrix P_, int N, int B,
-                                     double df, double sigma,
-                                     double seed = 1.0, int nthreads = 0) {
-  
-  const arma::uword n = X_.nrow();
-  const arma::uword p = X_.ncol();
-  
-  if (n < 1) stop("X must have at least one row.");
-  if ((arma::uword) beta_.size() != p)
-    stop("length(beta) must equal ncol(X).");
-  if ((arma::uword) P_.nrow() != p || (arma::uword) P_.ncol() != p)
-    stop("P must be p x p with p = ncol(X).");
-  if (N < 0) stop("N must be >= 0.");
-  if (B < 1) stop("B must be >= 1.");
-  if (!(sigma >= 0.0)) stop("sigma must be >= 0.");
-  if (!(df > 0.0)) stop("df must be > 0.");
-  
-  const arma::mat X(X_.begin(), n, p, false);          // read-only view
-  const arma::vec beta0 = as<arma::vec>(beta_);
-  arma::mat       P     = as<arma::mat>(P_);
-  
-  const uint64_t base = (uint64_t) (int64_t) std::llround(seed);
-  
-  // --- 1. row sampling: once, serial ----------------------------------------
-  // Own stream: seed 'base' corresponds to "b = -1" in the replicate scheme
-  // below (multiplier 0), so it never coincides with the streams of the t's.
-  arma::uvec idx((arma::uword) N);
-  {
-    RNG rng(base);
-    for (int i = 0; i < N; ++i)
-      idx[i] = (arma::uword) rng.bounded((uint64_t) n);
-  }
-  
-  // --- 2. gain sequence a_i * P_{i-1} x_i: once, serial ---------------------
-  // Written directly as p x N (one column per step): the inner loop walks
-  // contiguous columns, and no N x p temporary + transpose is needed.
-  arma::mat aPxT(p, (arma::uword) N);
-  arma::vec Px(p);
-  
-  for (int i = 0; i < N; ++i) {
-    const arma::rowvec x_i = X.row(idx[i]);
-    Px = P * x_i.t();
-    const double a_i = 1.0 / (1.0 + arma::dot(x_i, Px));
-    aPxT.col(i) = a_i * Px;
-    P -= a_i * (Px * Px.t());
-    const arma::mat P_t = P.t();
-    P = 0.5 * (P + P_t);
-  }
-  
-  // --- 3. replicates: parallel over b, only the t draws depend on b ---------
-  // Stored p x B (column per replicate) to avoid false sharing between
-  // threads; transposed back at the end.
-  arma::mat beta_out(p, B);
-  const StudentT tsamp(df);                            // shared, read-only
-  
-  auto worker = [&](int lo, int hi) {
-    arma::vec beta(p);
-    for (int b = lo; b < hi; ++b) {
-      RNG rng(base + 0x9E3779B97F4A7C15ULL * (uint64_t)(b + 1));
-      beta = beta0;
-      for (int i = 0; i < N; ++i)
-        beta += (sigma * tsamp.draw(rng)) * aPxT.col(i);
-      beta_out.col(b) = beta;
-    }
-  };
-  
-  int nthr = nthreads > 0 ? nthreads : (int) std::thread::hardware_concurrency();
-  if (nthr < 1) nthr = 1;
-  nthr = std::min(nthr, B);
-  
-  if (nthr == 1) {
-    worker(0, B);
-  } else {
-    std::vector<std::thread> pool;
-    pool.reserve(nthr);
-    const int chunk = (B + nthr - 1) / nthr;
-    for (int t = 0; t < nthr; ++t) {
-      const int lo = t * chunk, hi = std::min(B, lo + chunk);
-      if (lo < hi) pool.emplace_back(worker, lo, hi);
-    }
-    for (std::thread &th : pool) th.join();
-  }
-  
-  NumericMatrix out = wrap(arma::mat(beta_out.t()));
-  
-  SEXP dn = X_.attr("dimnames");
-  if (!Rf_isNull(dn)) {
-    List dnl(dn);
-    if (dnl.size() >= 2 && !Rf_isNull(dnl[1]))
-      out.attr("dimnames") = List::create(R_NilValue, dnl[1]);
-  }
-  
-  IntegerVector idx_r(N);
-  for (int i = 0; i < N; ++i) idx_r[i] = (int) idx[i] + 1;
-  out.attr("idx") = idx_r;
-  
-  return out;
-}
-
-
-
-
-
-
-
-
-
-
 static inline double dt_log_2(const double z, const double df) {
   if (df >= DF_GAUSS)
     return -0.5 * z * z - 0.5 * std::log(2.0 * M_PI);
@@ -2187,31 +1185,6 @@ static inline double dt_log_2(const double z, const double df) {
     - R::lgammafn(0.5 * df)
     - 0.5 * std::log(df * M_PI)
     - 0.5 * (df + 1.0) * std::log1p(z * z / df);
-}
-
-// ---------------------------------------------------------------------------
-// S = P_0^{-1} = blockdiag( eps, lambda_1*Omega_1 + eps*I, ... )
-//
-// Nota: e' esattamente l'inversa della P_0 costruita da rls_lambda(), ma
-// ottenuta senza invertire nulla. L'intercetta (colonna 0) ha varianza a
-// priori 1e10, cioe' precisione 1e-10 = eps.
-// ---------------------------------------------------------------------------
-static mat build_S(const vec& lambda, const std::vector<mat>& Om, const uword p) {
-  mat S(p, p, fill::zeros);
-  S(0, 0) = EPS_ORIG;
-  uword off = 1;
-  for (uword j = 0; j < Om.size(); ++j) {
-    const uword k = Om[j].n_rows;
-    if (off + k > p)
-      Rcpp::stop("le dimensioni dei blocchi di Omega non tornano con ncol(X)");
-    mat B = lambda(j) * Om[j];
-    B.diag() += EPS_ORIG;
-    S.submat(off, off, off + k - 1, off + k - 1) = B;
-    off += k;
-  }
-  if (off != p)
-    Rcpp::stop("la somma dei blocchi di Omega deve dare ncol(X) - 1");
-  return S;
 }
 
 static std::vector<mat> as_blocks(const Rcpp::List& Omega) {
@@ -2224,185 +1197,6 @@ static std::vector<mat> as_blocks(const Rcpp::List& Omega) {
     Om.push_back(std::move(Oj));
   }
   return Om;
-}
-
-// ---------------------------------------------------------------------------
-// Nucleo: una Cholesky, poi beta, leverage e residui LOO.
-// Restituisce false se A non e' fattorizzabile o se qualche h_i sfiora 1.
-// ---------------------------------------------------------------------------
-static bool loo_core(const vec& y, const mat& X, const vec& beta_0,
-                     const vec& lambda, const std::vector<mat>& Om,
-                     vec& beta, vec& h, vec& r_loo) {
-  
-  const uword p = X.n_cols;
-  const mat   S = build_S(lambda, Om, p);
-  
-  mat A = X.t() * X + S;
-  A = 0.5 * (A + A.t());              // simmetria esatta prima di chol()
-  
-  mat R;                              // A = R'R, R triangolare superiore
-  if (!chol(R, A)) return false;
-  
-  // beta = A^{-1} (X'y + S beta_0), risolto con due sostituzioni triangolari
-  const vec b = X.t() * y + S * beta_0;
-  beta = solve(trimatu(R), solve(trimatl(R.t()), b), solve_opts::fast);
-  
-  // W = R^{-T} X'   (p x n)   =>   h_i = ||W.col(i)||^2 = x_i' A^{-1} x_i
-  const mat W = solve(trimatl(R.t()), X.t(), solve_opts::fast);
-  h = trans(sum(square(W), 0));
-  
-  if (!h.is_finite() || h.max() >= 1.0 - 1e-12) return false;
-  
-  const vec e = y - X * beta;         // residui in-sample
-  r_loo = e / (1.0 - h);              // residui leave-one-out, esatti
-  return true;
-}
-
-// ---------------------------------------------------------------------------
-//  Funzione obiettivo. Firma identica alla versione R.
-//
-//    log_par : c(log(df), log(sigma), log(lambda_1), ..., log(lambda_q))
-//    y       : vettore risposta, lunghezza n
-//    X       : matrice n x p, prima colonna = intercetta
-//    beta_0  : media a priori, lunghezza p
-//    Omega   : lista di q matrici di penalita' (i blocchi dopo l'intercetta)
-// ---------------------------------------------------------------------------
-// [[Rcpp::export]]
-double npll_loo(const arma::vec& log_par,
-                const arma::vec& y,
-                const arma::mat& X,
-                const arma::vec& beta_0,
-                const Rcpp::List& Omega) {
-  
-  const uword n = y.n_elem;
-  const uword p = X.n_cols;
-  const uword q = (uword) Omega.size();
-  
-  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
-  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
-  if (log_par.n_elem != q + 2)
-    Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
-  if (!log_par.is_finite()) return BIG;
-  
-  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
-  // check that the selected df exceeds 2 (all values reported in the paper do).
-  const double df    = std::exp(log_par(0));
-  const double sigma = std::exp(log_par(1));
-  const vec    lambda = exp(log_par.subvec(2, log_par.n_elem - 1));
-  
-  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)
-        || !lambda.is_finite() || lambda.min() <= 0.0) return BIG;
-  
-  const std::vector<mat> Om = as_blocks(Omega);
-  
-  vec beta, h, r;
-  if (!loo_core(y, X, beta_0, lambda, Om, beta, h, r)) return BIG;
-  
-  // -sum_i [ log dt(r_i/sigma ; df) - log sigma ]
-  // identico a  -sum(extraDistr::dlst(y, mu = mu_loo, df, sigma, log = TRUE))
-  const double log_sigma = std::log(sigma);
-  double out = 0.0;
-  for (uword i = 0; i < n; ++i)
-    out += dt_log_2(r(i) / sigma, df) - log_sigma;
-  
-  if (!std::isfinite(out)) return BIG;
-  return -out;
-}
-
-// ---------------------------------------------------------------------------
-//  Diagnostica: gli stessi ingredienti, restituiti invece che sommati.
-//  Serve per controllare mu_loo contro il ciclo RLS e per guardare i residui.
-// ---------------------------------------------------------------------------
-// [[Rcpp::export]]
-Rcpp::List loo_fit(const arma::vec& lambda,
-                   const arma::vec& y,
-                   const arma::mat& X,
-                   const arma::vec& beta_0,
-                   const Rcpp::List& Omega) {
-  
-  const std::vector<mat> Om = as_blocks(Omega);
-  if (lambda.n_elem != Om.size())
-    Rcpp::stop("length(lambda) deve essere uguale a length(Omega)");
-  
-  vec beta, h, r;
-  if (!loo_core(y, X, beta_0, lambda, Om, beta, h, r))
-    Rcpp::stop("fattorizzazione fallita, oppure qualche leverage >= 1");
-  
-  return Rcpp::List::create(
-    Rcpp::Named("beta")   = beta,        // coefficienti sul campione completo
-    Rcpp::Named("h")      = h,           // leverage
-    Rcpp::Named("edf")    = accu(h),     // gradi di liberta' effettivi
-    Rcpp::Named("mu_loo") = y - r,       // previsioni leave-one-out
-    Rcpp::Named("r_loo")  = r);          // residui leave-one-out
-}
-
-
-
-
-// ---------------------------------------------------------------------------
-//  Variante di npll_loo con scala predittiva specifica per osservazione.
-//
-//  Nel ciclo RLS la previsione di y_i ha scala
-//      sigma_i^2 = sigma^2 * (1 + x_i' V_{i-1} x_i).
-//  In leave-one-out V_{i-1} diventa V_{-i} = (A - x_i x_i')^{-1}, con
-//  A = X'X + S, e per Sherman-Morrison
-//      x_i' V_{-i} x_i = h_i / (1 - h_i),   h_i = x_i' A^{-1} x_i,
-//  quindi
-//      sigma_i^2 = sigma^2 / (1 - h_i).
-//  Il leverage h_i e' gia' calcolato da loo_core(); loo_core() garantisce
-//  anche h_i < 1, per cui sigma_i e' sempre finito.
-//
-//    log_par : c(log(df), log(sigma), log(lambda_1), ..., log(lambda_q))
-//    y       : vettore risposta, lunghezza n
-//    X       : matrice n x p, prima colonna = intercetta
-//    beta_0  : media a priori, lunghezza p
-//    Omega   : lista di q matrici di penalita' (i blocchi dopo l'intercetta)
-// ---------------------------------------------------------------------------
-// [[Rcpp::export]]
-double npll_loo_alt(const arma::vec& log_par,
-                    const arma::vec& y,
-                    const arma::mat& X,
-                    const arma::vec& beta_0,
-                    const Rcpp::List& Omega) {
-  
-  const uword n = y.n_elem;
-  const uword p = X.n_cols;
-  const uword q = (uword) Omega.size();
-  
-  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
-  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
-  if (log_par.n_elem != q + 2)
-    Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
-  if (!log_par.is_finite()) return BIG;
-  
-  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
-  // check that the selected df exceeds 2 (all values reported in the paper do).
-  const double df    = std::exp(log_par(0));
-  const double sigma = std::exp(log_par(1));
-  const vec    lambda = exp(log_par.subvec(2, log_par.n_elem - 1));
-  
-  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)
-        || !lambda.is_finite() || lambda.min() <= 0.0) return BIG;
-  
-  const std::vector<mat> Om = as_blocks(Omega);
-  
-  vec beta, h, r;
-  if (!loo_core(y, X, beta_0, lambda, Om, beta, h, r)) return BIG;
-  
-  // -sum_i [ log dt(r_i/sigma_i ; df) - log sigma_i ],
-  //   sigma_i     = sigma / sqrt(1 - h_i)
-  //   log sigma_i = log sigma - 0.5 * log(1 - h_i)
-  const double log_sigma = std::log(sigma);
-  double out = 0.0;
-  for (uword i = 0; i < n; ++i) {
-    const double log1mh      = std::log1p(-h(i));            // log(1 - h_i)
-    const double sigma_i     = sigma / std::sqrt(1.0 - h(i));
-    const double log_sigma_i = log_sigma - 0.5 * log1mh;
-    out += dt_log_2(r(i) / sigma_i, df) - log_sigma_i;
-  }
-  
-  if (!std::isfinite(out)) return BIG;
-  return -out;
 }
 
 
@@ -2537,16 +1331,12 @@ NumericMatrix ps_rs_parallel_t_fixed_alt(NumericMatrix X_, NumericVector beta_,
 }
 
 
-
-
 // ---------------------------------------------------------------------------
 //  loo-pll (Section 4.3) for the LINEAR MODEL with P_n a location-scale
 //  Student-t.
 //
-//  Same as npll_loo_lm_skew_alt, only the predictive density changes:
-//    - no Omega / lambda: V_0 is fixed and passed in;
-//    - P_n is a location-scale t centred at x_i' beta_{-i};
-//    - the only parameters are (df, sigma).
+//  No Omega / lambda: V_0 is fixed and passed in, P_n is a location-scale t
+//  centred at x_i' beta_{-i}, and the only parameters are (df, sigma).
 //
 //  RLS / generalized ridge estimate, eq. (5) of the paper:
 //      V_n^{-1} = V_0^{-1} + X'X,     beta_n = V_n (V_0^{-1} beta_0 + X'y).
@@ -2560,23 +1350,20 @@ NumericMatrix ps_rs_parallel_t_fixed_alt(NumericMatrix X_, NumericVector beta_,
 //
 //  P_n:  y_i ~ x_i' beta_{-i} + sigma_i * t_df,
 //  i.e. exactly the law simulated by ps_lm_fixed_par_t_alt(). sigma is the
-//  SCALE phi, as in the sampler and in npll_loo_alt; the sd of P_n is
+//  SCALE phi, as in the sampler; the sd of P_n is
 //  sigma_i * sqrt(df / (df - 2)) for df > 2.
 //
 //  i-th contribution:
 //      log p_i = log dt(r_i / sigma_i ; df) - log sigma_i,
 //      r_i     = y_i - x_i' beta_{-i}.
 //
-//    log_par : c(log(df), log(sigma))      (same order as npll_loo_alt)
+//    log_par : c(log(df), log(sigma))
 //    y       : response vector, length n
 //    X       : n x p matrix (with or without an intercept column)
 //    beta_0  : initial mean, length p
 //    V_0     : p x p symmetric positive-definite matrix
 //
-//  Reuses, from the same file:
-//    - BIG and dt_log_2()   (defined before npll_loo)
-//    - loo_core_lm()        (defined with npll_loo_lm_skew_alt)
-//  so it must be placed AFTER npll_loo_lm_skew_alt.
+//  Reuses BIG, dt_log_2() and loo_core_lm(), defined above.
 // ---------------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -2623,30 +1410,12 @@ double npll_loo_lm_t_alt(const arma::vec& log_par,
 }
 
 
-
-
-
-
-
-
-
-
-
 namespace {
 
 const double BIG_APPL      = 1e100;  // valore per parametri non ammissibili
-  const double EPS_APPL      = 1e-10;  // come EPS_ORIG / eps degli originali
+  const double EPS_APPL      = 1e-10;  // come l'eps di rls_lambda()
   const double VAR_UNPEN     = 1e10;   // = 1 / EPS_APPL, come P_0(0,0) = 1e10
   const double DF_GAUSS_APPL = 1e8;
-  
-  inline double dt_log_appl(const double z, const double df) {
-    if (df >= DF_GAUSS_APPL)
-      return -0.5 * z * z - 0.5 * std::log(2.0 * M_PI);
-    return R::lgammafn(0.5 * (df + 1.0))
-      - R::lgammafn(0.5 * df)
-      - 0.5 * std::log(df * M_PI)
-      - 0.5 * (df + 1.0) * std::log1p(z * z / df);
-  }
   
   std::vector<mat> as_blocks_appl(const Rcpp::List& Omega) {
     std::vector<mat> Om;
@@ -2716,7 +1485,7 @@ const double BIG_APPL      = 1e100;  // valore per parametri non ammissibili
     return P0;
   }
   
-  // Una Cholesky di A = X'X + S, poi beta, leverage e residui LOO (come loo_core).
+  // Una Cholesky di A = X'X + S, poi beta, leverage e residui LOO.
   bool loo_core_appl(const vec& y, const mat& X, const vec& beta_0,
                      const vec& lambda, const std::vector<mat>& Om, const uword n_par,
                      vec& beta, vec& h, vec& r_loo) {
@@ -2740,63 +1509,6 @@ const double BIG_APPL      = 1e100;  // valore per parametri non ammissibili
     return true;
   }
   
-} // anonymous namespace
-
-
-// ---------------------------------------------------------------------------
-//  npll_loo_alt_appl
-//    log_par : c(log(df), log(sigma), log(lambda_1), ..., log(lambda_q)),
-//              q = length(Omega) = numero di blocchi PENALIZZATI
-//    n_par   : numero di colonne iniziali di X non penalizzate (intercetta
-//              inclusa). Default 1 = npll_loo_alt().
-// ---------------------------------------------------------------------------
-// [[Rcpp::export]]
-double npll_loo_alt_appl(const arma::vec& log_par,
-                         const arma::vec& y,
-                         const arma::mat& X,
-                         const arma::vec& beta_0,
-                         const Rcpp::List& Omega,
-                         int n_par = 1) {
-  
-  const uword n = y.n_elem;
-  const uword p = X.n_cols;
-  const uword q = (uword) Omega.size();
-  
-  if (X.n_rows != n)       Rcpp::stop("nrow(X) deve essere uguale a length(y)");
-  if (beta_0.n_elem != p)  Rcpp::stop("length(beta_0) deve essere uguale a ncol(X)");
-  if (log_par.n_elem != q + 2)
-    Rcpp::stop("length(log_par) deve essere length(Omega) + 2");
-  
-  const std::vector<mat> Om = as_blocks_appl(Omega);
-  check_design_appl(X, Om, n_par);
-  
-  if (!log_par.is_finite()) return BIG_APPL;
-  
-  // Only df > 0 is enforced here, whereas the theory requires df > 2 (finite variance):
-  // check that the selected df exceeds 2 (all values reported in the paper do).
-  const double df     = std::exp(log_par(0));
-  const double sigma  = std::exp(log_par(1));
-  const vec    lambda = (q > 0) ? vec(exp(log_par.subvec(2, log_par.n_elem - 1)))
-    : vec();
-  
-  if (!(df > 0.0) || !(sigma > 0.0) || !std::isfinite(sigma)) return BIG_APPL;
-  if (q > 0 && (!lambda.is_finite() || lambda.min() <= 0.0))  return BIG_APPL;
-  
-  vec beta, h, r;
-  if (!loo_core_appl(y, X, beta_0, lambda, Om, (uword) n_par, beta, h, r))
-    return BIG_APPL;
-  
-  // -sum_i [ log dt(r_i/sigma_i ; df) - log sigma_i ],  sigma_i = sigma/sqrt(1-h_i)
-  const double log_sigma = std::log(sigma);
-  double out = 0.0;
-  for (uword i = 0; i < n; ++i) {
-    const double sigma_i     = sigma / std::sqrt(1.0 - h(i));
-    const double log_sigma_i = log_sigma - 0.5 * std::log1p(-h(i));
-    out += dt_log_appl(r(i) / sigma_i, df) - log_sigma_i;
-  }
-  
-  if (!std::isfinite(out)) return BIG_APPL;
-  return -out;
 }
 
 
@@ -2852,10 +1564,9 @@ Rcpp::List rls_lambda_appl(const arma::vec& y,
 }
 
 
-
 // ---------------------------------------------------------------------------
 //  npll_loo_alt_appl_skt
-//    Come npll_loo_alt_appl(), ma P_n e' una skew-t di Azzalini (Azzalini &
+//    LOO-PLL dell'applicazione con P_n skew-t di Azzalini (Azzalini &
 //    Capitanio, 2003) con posizione x_i' beta_{-i}, scala
 //    sigma_i = sigma / sqrt(1 - h_i), forma alpha e df gradi di liberta':
 //
@@ -2863,7 +1574,7 @@ Rcpp::List rls_lambda_appl(const arma::vec& y,
 //               + log T_{df+1}( alpha * z * sqrt((df + 1) / (df + z^2)) ),
 //      z_i = r_i / sigma_i,     contributo i-esimo = log f(z_i) - log sigma_i.
 //
-//    - alpha = 0 restituisce esattamente npll_loo_alt_appl();
+//    - alpha = 0 restituisce esattamente la LOO-PLL con P_n Student-t;
 //    - df >= DF_GAUSS_APPL usa il limite skew normal
 //        log 2 + log phi(z) + log Phi(alpha * z).
 //    Nota: per alpha != 0, x_i' beta_{-i} e' la posizione e non la media di P_n.
@@ -2875,7 +1586,7 @@ Rcpp::List rls_lambda_appl(const arma::vec& y,
 //              inclusa). Default 1.
 //
 //    Usa as_blocks_appl(), check_design_appl(), loo_core_appl(), BIG_APPL e
-//    DF_GAUSS_APPL dal namespace anonimo: va messa dopo npll_loo_alt_appl().
+//    DF_GAUSS_APPL dal namespace anonimo: va messa dopo di essi.
 // ---------------------------------------------------------------------------
 // [[Rcpp::export]]
 double npll_loo_alt_appl_skt(const arma::vec& log_par,
@@ -2951,12 +1662,10 @@ double npll_loo_alt_appl_skt(const arma::vec& log_par,
 // ===========================================================================
 //  Skew-t P_n for the linear model: new functions only.
 //
-//  Paste at the END of AM_sim.cpp. Uses what is already there:
-//  RNG, StudentT, BIG, DF_GAUSS, dt_log_2(), SN_SQRT_2_OVER_PI, SN_LOG2,
-//  dsn_log_std(), loo_core_lm().
+//  Uses, from above: RNG, StudentT, BIG, DF_GAUSS, dt_log_2(), SN_SQRT_2_OVER_PI,
+//  SN_LOG2, dsn_log_std(), loo_core_lm().
 //
-//  Same structure as ps_lm_fixed_par_skew_alt / npll_loo_lm_skew_alt:
-//  predictive scale sigma_i = sigma * sqrt(1 + x_i' V_{i-1} x_i) in the
+//  Predictive scale sigma_i = sigma * sqrt(1 + x_i' V_{i-1} x_i) in the
 //  sampler, sigma_i = sigma / sqrt(1 - h_i) in the loo-pll, and P_n centred
 //  so that its mean is x_i' beta_{i-1}.
 //
@@ -3154,9 +1863,8 @@ double npll_loo_lm_st_alt(const arma::vec& par,
 
 
 // ---------------------------------------------------------------------------
-//  LOO-PLL of npll_loo_alt() together with its analytic gradient.
-//
-//  Same objective as npll_loo_alt(), but
+//  LOO-PLL of the additive models (Section 4.3), with a Student-t P_n and
+//  sigma_n^2 = sigma^2 / a_n, together with its analytic gradient:
 //    - X'X and X'y are passed in, so that they are computed once per dataset
 //      (they do not depend on the hyperparameters);
 //    - the gradient with respect to log_par is returned as well, so that
